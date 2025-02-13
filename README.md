@@ -13,7 +13,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 - **Intrinsic Types:** Handles types like Integer, Double, Boolean, Variant and String.
 - **Bytecode Execution:** Runs compiled bytecode on a custom VM.
 - **Debug Logging:** Step-by-step debug logs to trace lexing, parsing, compiling, and execution.
-- **100%:** matches Xojo language syntax
+- **100%:** Matches Xojo language syntax
 - **Open Source:** Released under the MIT License.
 
 ## Getting Started 🏁
