@@ -66,7 +66,7 @@ Debug logging is enabled via the DEBUG_MODE flag. Set it to true or false at the
 
 ```
 bool DEBUG_MODE = true;
-``°
+```
 
 This will output detailed logs for lexing, parsing, compiling, and execution.
 
