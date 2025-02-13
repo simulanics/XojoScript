@@ -4,7 +4,7 @@ An open-source XojoScript compiler and virtual machine for the Xojo language. Co
 
 # XojoScript Bytecode Compiler and Virtual Machine 🚀
 
-Welcome to the **XojoScript Bytecode Compiler**! This project is a lightweight bytecode interpreter written in C++ that emulates XojoScript execution—including functions, classes, and more. It compiles XojoScript into bytecode and executes it on a custom virtual machine. 🤯
+Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This project is a lightweight bytecode compiler and virtual machine written in C++ that handles XojoScript execution—including functions, classes, and more - entirely cross- platform. It compiles XojoScript into bytecode and executes it on a custom virtual machine. 🤯
 
 ## Features ✨
 
@@ -29,18 +29,20 @@ Welcome to the **XojoScript Bytecode Compiler**! This project is a lightweight b
    ```bash
    git clone https://github.com/yourusername/XojoScript-Bytecode-Compiler.git
    cd XojoScript-Bytecode-Compiler
-
+   ```
 2. Compile the Project:
 
 For example, using g++:
 
+```
 g++ -std=c++17 -o xojoscript xojoscript.cxx
-
+```
 
 3. Prepare Your Script:
 
 Create a file named test.txt with your XojoScript code. For example:
 
+```
 Function addtwonumbers(num1 As Integer, num2 As Integer) As Integer
     Return num1 + num2
 End Function
@@ -49,19 +51,22 @@ Public Sub Main()
     Dim result As Integer = addtwonumbers(2, 3)
     Print(str(result))
 End Sub
-
+```
 
 4. Run the Compiler on a script:
 
+```
 ./xojoscript --s filename
 (*currently compiles test.txt file and immediately runs it in the VM)
-
+```
 
 Debugging 🔍
 
 Debug logging is enabled via the DEBUG_MODE flag. Set it to true or false at the top of the code:
 
+```
 bool DEBUG_MODE = true;
+``°
 
 This will output detailed logs for lexing, parsing, compiling, and execution.
 
