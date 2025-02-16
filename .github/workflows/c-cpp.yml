@@ -38,6 +38,7 @@ jobs:
 
       - name: Build on Windows
         if: runner.os == 'Windows'
+        shell: cmd
         run: |
           echo Building for architecture %ARCH%
           if "%ARCH%"=="x86_64" (
