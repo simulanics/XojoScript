@@ -16,12 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup C++ Compiler (Linux Only)
-        if: runner.os == 'Linux'
-        uses: actions/setup-cpp@v1
-        with:
-          cpp: 'gcc-10'
-
       - name: Build on Linux
         if: runner.os == 'Linux'
         run: |
