@@ -36,7 +36,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 For example, using g++:
 
 ```
-g++ -std=c++17 -o xojoscript xojoscript.cxx
+g++ -std=c++17 -o xojoscript xojoscript.cpp
 ```
 
 3. Prepare Your Script:
