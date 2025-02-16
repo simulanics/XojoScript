@@ -1,0 +1,174 @@
+// file: test.txt
+// comment test
+
+Dim StartTime As Double
+StartTime = ticks
+
+print(str(StartTime))
+print(StartTime.toString)
+print(starttime.toString) ' Test: Should be 0.
+
+Function factorial(n As Integer) As Integer
+    If n <= 1 Then
+        Return 1
+    Else
+        Return n * factorial(n - 1)
+    End If
+End Function
+
+Dim f As Integer = factorial(6)
+print("Factorial of 6 is " + str(f))
+
+Dim x() As Integer
+x.add(2)
+x.add(25)
+x.add(336)
+print(str(x.indexof(336)))
+print(str(x.indexof(214)))
+
+For i As Integer = 0 To 100
+    print("Loop: " + str(i))
+Next
+
+print("Hello World!")
+
+Dim strOutput() As String
+strOutput.add("hello ")
+strOutput.add("World")
+print(strOutput(0) + strOutput(1))
+
+' Change intOut to be an array of Integer so we can add numbers.
+Dim intOut() As Integer
+intOut.add(2)
+intOut.add(100)
+print(str(intOut(0) + intOut(1)))
+
+
+Dim intCount As Integer
+Dim c2 As Integer
+
+While intCount < 100
+    print(">>>> " + intCount.toString + " <<<<")
+    intCount = intCount + 1
+    For c2 = 1 To 100 Step 2
+        print("## " + str(c2) + " ##")
+    Next
+Wend
+
+Dim inp() As String
+inp = Array("Hello", " ", "WORLD")
+print(inp(0) + inp(1) + inp(2))
+
+
+print(val("236"))
+
+
+' Sample Class definition
+Class TestClass
+
+  ' Property declarations
+  Var i As Integer
+  Var c As Color
+  Var fname As String
+  Var lname As String
+  //var arrList() as string
+
+   Sub Constructor(firstname As String, Optional lastname As String = "Combatti")
+    fname = firstname
+    self.lname = lastname //self test
+    print("Name: " + fname + " " + lastname)
+  End Sub
+  
+  ' Method declarations
+  Sub myMethod(x As Integer, y As Integer)
+    print(x.toString + ", " + y.toString)
+  End Sub
+  
+  Function myFunc() As String
+    Return "hello world from TestClass.myFunc()"
+  End Function
+
+  Function myFunc2() As Integer
+    Return 37
+  End Function
+
+End Class
+
+Dim s As New TestClass //("Matthew") ' Optional lastname parameter not provided.
+s.constructor("Matthew")
+s.i = 10
+s.c = &cFF00FF
+s.myMethod(20, 15)
+print(s.myFunc())
+print(str(s.i))
+print(s.i.tostring)
+print(str(s.c))
+print(str(s.myFunc2() + 3))
+print(s.fname)
+print(s.lname)
+
+
+
+print("Hello, " + _
+"this is a line concatenation " + _
+"test! -" + _
+s.fname + " " + s.lname)
+
+
+
+var cc as Color
+cc = &c0000FF
+
+var tt() as Variant
+tt.add("hello")
+tt.add(cc)
+tt.add(2216)
+print(str(tt.count()))
+for tx as integer = 0 to tt.lastrowindex()
+   print(tt(tx))
+next
+
+print(str(val("216.14")))
+
+
+' Fibonacci Series Demo in XojoScript
+
+Function Fibonacci(n2 As Integer) As Integer 
+print("N2 val: " + str(n2))
+
+If n2 <= 0 Then 
+Return 0 
+Else
+Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
+End If
+End Function
+
+Dim n As Integer = 7  ' Change this value to generate more numbers 
+Print("Fibonacci Series up to " + Str(n) + " terms:")
+
+Dim fibSeries() As Integer 
+Dim fib As Integer
+For i As Integer = 0 To n - 1 
+ fib = Fibonacci(i)
+ fibSeries.Add(fib) 
+ Print("Fibonacci(" + Str(i) + ") = " + Str(fib)) 
+
+Next
+
+
+' Golden Ratio Demo in XojoScript
+
+' Calculate Golden Ratio 
+Dim goldenRatio As Double 
+If n > 1 Then 
+goldenRatio = fibSeries(n-1) / fibSeries(n-2) Print("Golden Ratio approximation: " + Str(goldenRatio)) 
+End If
+
+
+Dim EndTime As Double = ticks
+print("Ticks: " + ticks.toString)
+EndTime = ticks / 60
+print("Run Time: " + str(EndTime) + " seconds")
+print("Run Time: " + str(microseconds / 1000000) + " seconds")
+
+Print("Done")
