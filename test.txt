@@ -6,7 +6,7 @@ StartTime = ticks
 
 print(str(StartTime))
 print(StartTime.toString)
-print(starttime.toString) ' Test: Should be 0.
+print(starttime.toString)
 
 Function factorial(n As Integer) As Integer
     If n <= 1 Then
@@ -18,6 +18,7 @@ End Function
 
 Dim f As Integer = factorial(6)
 print("Factorial of 6 is " + str(f))
+
 
 Dim x() As Integer
 x.add(2)
@@ -61,6 +62,8 @@ print(inp(0) + inp(1) + inp(2))
 
 
 print(val("236"))
+var tv as integer = 236
+print(tv.tostring)
 
 
 ' Sample Class definition
@@ -77,6 +80,7 @@ Class TestClass
     fname = firstname
     self.lname = lastname //self test
     print("Name: " + fname + " " + lastname)
+   // arrlist.add("test 2")
   End Sub
   
   ' Method declarations
@@ -128,22 +132,32 @@ for tx as integer = 0 to tt.lastrowindex()
    print(tt(tx))
 next
 
+// Boolean test
+var bb as Boolean = false
+if 3 - 3 = 0 then
+  bb = true
+end if
+print(str(bb))
+
+
 print(str(val("216.14")))
 
 
 ' Fibonacci Series Demo in XojoScript
 
 Function Fibonacci(n2 As Integer) As Integer 
-print("N2 val: " + str(n2))
+'print("N2 val: " + str(n2))
 
 If n2 <= 0 Then 
-Return 0 
+  Return 0 
+ElseIf n2 = 1 Then 
+  Return 1 
 Else
-Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
+  Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
 End If
 End Function
 
-Dim n As Integer = 7  ' Change this value to generate more numbers 
+Dim n As Integer = 10  ' Change this value to generate more numbers 
 Print("Fibonacci Series up to " + Str(n) + " terms:")
 
 Dim fibSeries() As Integer 
@@ -151,7 +165,8 @@ Dim fib As Integer
 For i As Integer = 0 To n - 1 
  fib = Fibonacci(i)
  fibSeries.Add(fib) 
- Print("Fibonacci(" + Str(i) + ") = " + Str(fib)) 
+//print("fib: " + str(fib))
+Print("Fibonacci(" + Str(i) + ") = " + Str(fib)) 
 
 Next
 
@@ -172,3 +187,152 @@ print("Run Time: " + str(EndTime) + " seconds")
 print("Run Time: " + str(microseconds / 1000000) + " seconds")
 
 Print("Done")
+'save()
+'load("./compiled.txt")
+
+
+Var theNumber As Integer
+Var digits As Integer
+theNumber = 33
+If theNumber < 10 Then
+  digits = 1
+ElseIf theNumber < 100 Then
+  digits = 2
+ElseIf theNumber < 1000 Then
+  digits = 3
+Else
+  digits = 4
+End If
+
+
+
+Var x As Double
+Var y As Integer
+Var r As New Random
+Var Pi as Double = 3.14159
+
+' Abs() - Absolute value
+x = Abs(-23.9)
+Print(Str(x)) 
+Print("Expected Result: 23.9")
+
+' Acos() - Arc cosine
+x = Acos(1)
+Print(Str(x)) 
+Print("Expected Result: 0")
+
+' Asc() - ASCII value of character
+y = Asc("A")
+Print(Str(y)) 
+Print("Expected Result: 65")
+
+' Asin() - Arc sine
+x = Asin(0.5)
+Print(Str(x)) 
+Print("Expected Result: 0.523598")
+
+' Atan() - Arc tangent
+x = Atan(1)
+Print(Str(x)) 
+Print("Expected Result: 0.785398")
+
+' Atan2() - Arc tangent using y and x
+x = Atan2(3, 4)
+Print(Str(x)) 
+Print("Expected Result: 0.6435")
+
+' Ceiling() - Round up
+x = Ceiling(2.3)
+Print(Str(x)) 
+Print("Expected Result: 3")
+
+' Cos() - Cosine of angle
+x = Cos(Pi/3)
+Print(Str(x)) 
+Print("Expected Result: 0.5")
+
+' Exp() - Exponential function (e^x)
+x = Exp(1)
+Print(Str(x)) 
+Print("Expected Result: 2.7183")
+
+print(str( 4^2 ))
+Print("Expected Result: 16")
+
+' Floor() - Round down
+x = Floor(2.9)
+Print(Str(x)) 
+Print("Expected Result: 2")
+
+' Log() - Natural logarithm
+x = Log(2.7183)
+Print(Str(x)) 
+Print("Expected Result: 1")
+
+' Max() - Maximum of two values
+x = Max(10, 20)
+Print(Str(x)) 
+Print("Expected Result: 20")
+
+' Min() - Minimum of two values
+x = Min(10, 20)
+Print(Str(x)) 
+Print("Expected Result: 10")
+
+' Mod - Remainder of division
+y = 10 Mod 3
+Print(Str(y)) 
+Print("Expected Result: 1")
+
+' Oct() - Convert to octal string
+Var octValue As String = Oct(10)
+Print(octValue) 
+Print("Expected Result: 12")
+
+' Pow() - Exponentiation
+x = Pow(2, 3)
+Print(Str(x)) 
+Print("Expected Result: 8")
+
+' Random - Generate a random number
+x = r.InRange(1, 100)
+Print(Str(x)) 
+Print("Expected Result: Random number between 1 and 100")
+
+' Rnd() - Generate a random number between 0 and 1
+x = Rnd()
+Print(Str(x)) 
+Print("Expected Result: Random value between 0 and 1")
+
+
+' Round() - Rounding to nearest integer
+x = Round(2.5)
+Print(Str(x)) 
+Print("Expected Result: 3")
+
+' Sign() - Get the sign of a number
+y = Sign(-10)
+Print(Str(y)) 
+Print("Expected Result: -1")
+
+' Sin() - Sine function
+x = Sin(Pi/2)
+Print(Str(x)) 
+Print("Expected Result: 1")
+
+' Sqrt() - Square root
+x = Sqrt(9)
+Print(Str(x)) 
+Print("Expected Result: 3")
+
+' Tan() - Tangent function
+x = Tan(Pi/4)
+Print(Str(x)) 
+Print("Expected Result Approximately: 1")
+
+' ^ - Exponentiation operator
+x = 2 ^ 3
+Print(Str(x)) 
+Print("Expected Result: 8")
+
+
