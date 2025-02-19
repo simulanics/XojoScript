@@ -19,6 +19,9 @@
 #include <chrono>
 #include <functional>
 #include <cstdio>
+#include <cmath>
+#include <random>
+#include <iomanip>
 
 // ============================================================================
 // Debugging and Time globals
@@ -29,6 +32,10 @@ void debugLog(const std::string &msg) {
         std::cout << "[DEBUG] " << msg << std::endl;
 }
 std::chrono::steady_clock::time_point startTime;
+
+// ---------------------------------------------------------------------------
+// Global random engine used by built-in rnd (and random class)
+std::mt19937 global_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
 // ============================================================================
 // Forward declarations for object types
@@ -181,13 +188,23 @@ struct ObjBoundMethod {
 };
 
 // ============================================================================
-// valueToString – visitor for Value conversion
+// valueToString – visitor for Value conversion (with trailing zero trimming)
 // ============================================================================
 std::string valueToString(const Value &val) {
     struct Visitor {
         std::string operator()(std::monostate) const { return "nil"; }
         std::string operator()(int i) const { return std::to_string(i); }
-        std::string operator()(double d) const { return std::to_string(d); }
+        std::string operator()(double d) const {
+            std::string s = std::to_string(d);
+            size_t pos = s.find('.');
+            if (pos != std::string::npos) {
+                while (!s.empty() && s.back() == '0')
+                    s.pop_back();
+                if (!s.empty() && s.back() == '.')
+                    s.pop_back();
+            }
+            return s;
+        }
         std::string operator()(bool b) const { return b ? "true" : "false"; }
         std::string operator()(const std::string &s) const { return s; }
         std::string operator()(const Color &col) const {
@@ -213,14 +230,16 @@ std::string valueToString(const Value &val) {
 enum class TokenType {
     LEFT_PAREN, RIGHT_PAREN, COMMA, PLUS, MINUS, STAR, SLASH, EQUAL,
     DOT, LEFT_BRACKET, RIGHT_BRACKET,
-    IDENTIFIER, STRING, NUMBER, COLOR,
+    IDENTIFIER, STRING, NUMBER, COLOR, BOOLEAN_TRUE, BOOLEAN_FALSE,
     FUNCTION, SUB, END, RETURN, CLASS, NEW, DIM, AS, OPTIONAL, PUBLIC, PRIVATE, PRINT,
-    IF, THEN, ELSE,
+    IF, THEN, ELSE, ELSEIF,
     FOR, TO, STEP, NEXT,
     WHILE, WEND,
     NOT, AND, OR,
     LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, NOT_EQUAL,
-    EOF_TOKEN
+    EOF_TOKEN,
+    CARET, // '^'
+    MOD    // "mod" keyword/operator
 };
 
 struct Token {
@@ -247,7 +266,7 @@ private:
     const std::string source;
     std::vector<Token> tokens;
     int start = 0, current = 0, line = 1;
- 
+
     bool isAtEnd() { return current >= source.size(); }
     char advance() { return source[current++]; }
     void addToken(TokenType type) {
@@ -269,13 +288,14 @@ private:
             case '+': addToken(TokenType::PLUS); break;
             case '-': addToken(TokenType::MINUS); break;
             case '*': addToken(TokenType::STAR); break;
-            case '/': 
+            case '/':   
                 if (peek() == '/' || peek() == '\'') {
                     while (peek() != '\n' && !isAtEnd()) advance();
                 } else {
                     addToken(TokenType::SLASH);
                 }
                 break;
+            case '^': addToken(TokenType::CARET); break;
             case '=': addToken(TokenType::EQUAL); break;
             case '<':
                 if (match('=')) addToken(TokenType::LESS_EQUAL);
@@ -289,7 +309,7 @@ private:
             case '.': addToken(TokenType::DOT); break;
             case '[': addToken(TokenType::LEFT_BRACKET); break;
             case ']': addToken(TokenType::RIGHT_BRACKET); break;
-            case '&': { 
+            case '&': {   
                 if (peek() == 'c' || peek() == 'C') {
                     advance(); // consume 'c'
                     std::string hex;
@@ -306,7 +326,7 @@ private:
             case '\t': break;
             case '\n': line++; break;
             case '"': string(); break;
-            case '\'':
+            case '\'': 
                 while (peek() != '\n' && !isAtEnd()) advance();
                 break;
             default:
@@ -352,6 +372,7 @@ private:
         else if (lowerText == "if")       type = TokenType::IF;
         else if (lowerText == "then")     type = TokenType::THEN;
         else if (lowerText == "else")     type = TokenType::ELSE;
+        else if (lowerText == "elseif")   type = TokenType::ELSEIF;
         else if (lowerText == "for")      type = TokenType::FOR;
         else if (lowerText == "to")       type = TokenType::TO;
         else if (lowerText == "step")     type = TokenType::STEP;
@@ -361,6 +382,9 @@ private:
         else if (lowerText == "not")      type = TokenType::NOT;
         else if (lowerText == "and")      type = TokenType::AND;
         else if (lowerText == "or")       type = TokenType::OR;
+        else if (lowerText == "mod")      type = TokenType::MOD;
+        else if (lowerText == "true")     type = TokenType::BOOLEAN_TRUE;
+        else if (lowerText == "false")    type = TokenType::BOOLEAN_FALSE;
         addToken(type);
     }
 };
@@ -469,6 +493,8 @@ enum OpCode {
     OP_MUL,
     OP_DIV,
     OP_NEGATE,
+    OP_POW,
+    OP_MOD,
     OP_LT,
     OP_LE,
     OP_GT,
@@ -484,7 +510,7 @@ enum OpCode {
     OP_SET_GLOBAL,
     OP_NEW,
     OP_CALL,
-    OP_OPTIONAL_CALL, // New opcode: call if function exists, else skip.
+    OP_OPTIONAL_CALL,
     OP_RETURN,
     OP_NIL,
     OP_JUMP_IF_FALSE,
@@ -507,6 +533,8 @@ std::string opcodeToString(int opcode) {
         case OP_MUL:           return "OP_MUL";
         case OP_DIV:           return "OP_DIV";
         case OP_NEGATE:        return "OP_NEGATE";
+        case OP_POW:           return "OP_POW";
+        case OP_MOD:           return "OP_MOD";
         case OP_LT:            return "OP_LT";
         case OP_LE:            return "OP_LE";
         case OP_GT:            return "OP_GT";
@@ -565,7 +593,7 @@ Value pop(VM &vm) {
 // ============================================================================
 // AST Definitions: Expressions
 // ============================================================================
-enum class BinaryOp { ADD, SUB, MUL, DIV, LT, LE, GT, GE, NE, EQ, AND, OR };
+enum class BinaryOp { ADD, SUB, MUL, DIV, LT, LE, GT, GE, NE, EQ, AND, OR, POW, MOD };
 
 struct Expr { virtual ~Expr() = default; };
 
@@ -694,6 +722,7 @@ struct VarStmt : Stmt {
         : name(name), initializer(initializer), varType(toLower(varType)) { }
 };
 
+// For if–statements we use a single AST node; nested else–if chains are represented by an if–statement in the elseBranch.
 struct IfStmt : Stmt {
     std::shared_ptr<Expr> condition;
     std::vector<std::shared_ptr<Stmt>> thenBranch;
@@ -756,7 +785,7 @@ public:
 private:
     std::vector<Token> tokens;
     int current = 0;
- 
+   
     bool isAtEnd() { return peek().type == TokenType::EOF_TOKEN; }
     Token peek() { return tokens[current]; }
     Token previous() { return tokens[current-1]; }
@@ -786,6 +815,8 @@ private:
             case TokenType::NUMBER:
             case TokenType::STRING:
             case TokenType::COLOR:
+            case TokenType::BOOLEAN_TRUE:
+            case TokenType::BOOLEAN_FALSE:
             case TokenType::IDENTIFIER:
             case TokenType::LEFT_PAREN:
                 return true;
@@ -978,18 +1009,36 @@ private:
             initializer = std::make_shared<ArrayLiteralExpr>(std::vector<std::shared_ptr<Expr>>{});
         return std::make_shared<VarStmt>(name.lexeme, initializer, typeStr);
     }
+    // ---- Updated ifStatement to support elseif chains ----
     std::shared_ptr<Stmt> ifStatement() {
         std::shared_ptr<Expr> condition = expression();
         consume(TokenType::THEN, "Expect 'Then' after if condition.");
-        std::vector<std::shared_ptr<Stmt>> thenBranch = block({TokenType::ELSE, TokenType::END});
-        std::vector<std::shared_ptr<Stmt>> elseBranch;
+        std::vector<std::shared_ptr<Stmt>> thenBranch = block({TokenType::ELSEIF, TokenType::ELSE, TokenType::END});
+        std::shared_ptr<Stmt> result = std::make_shared<IfStmt>(condition, thenBranch, std::vector<std::shared_ptr<Stmt>>{});
+        while (match({TokenType::ELSEIF})) {
+            std::shared_ptr<Expr> elseifCondition = expression();
+            consume(TokenType::THEN, "Expect 'Then' after ElseIf condition.");
+            std::vector<std::shared_ptr<Stmt>> elseifBranch = block({TokenType::ELSEIF, TokenType::ELSE, TokenType::END});
+            std::shared_ptr<Stmt> elseifStmt = std::make_shared<IfStmt>(elseifCondition, elseifBranch, std::vector<std::shared_ptr<Stmt>>{});
+            std::shared_ptr<IfStmt> lastIf = std::dynamic_pointer_cast<IfStmt>(result);
+            while (lastIf->elseBranch.size() == 1 && std::dynamic_pointer_cast<IfStmt>(lastIf->elseBranch[0])) {
+                lastIf = std::dynamic_pointer_cast<IfStmt>(lastIf->elseBranch[0]);
+            }
+            lastIf->elseBranch = { elseifStmt };
+        }
         if (match({TokenType::ELSE})) {
-            elseBranch = block({TokenType::END});
+            std::vector<std::shared_ptr<Stmt>> elseBranch = block({TokenType::END});
+            std::shared_ptr<IfStmt> lastIf = std::dynamic_pointer_cast<IfStmt>(result);
+            while (lastIf->elseBranch.size() == 1 && std::dynamic_pointer_cast<IfStmt>(lastIf->elseBranch[0])) {
+                lastIf = std::dynamic_pointer_cast<IfStmt>(lastIf->elseBranch[0]);
+            }
+            lastIf->elseBranch = elseBranch;
         }
         consume(TokenType::END, "Expect 'End' after if statement.");
         consume(TokenType::IF, "Expect 'If' after End in if statement.");
-        return std::make_shared<IfStmt>(condition, thenBranch, elseBranch);
+        return result;
     }
+    // ---------------------------------------------------------
     std::shared_ptr<Stmt> forStatement() {
         Token varName = consume(TokenType::IDENTIFIER, "Expect loop variable name.");
         if (match({TokenType::AS})) { consume(TokenType::IDENTIFIER, "Expect type after 'As'."); }
@@ -1093,13 +1142,26 @@ private:
         }
         return expr;
     }
+    // Modified multiplication now calls exponentiation and supports '*' '/' and 'mod'
     std::shared_ptr<Expr> multiplication() {
-        std::shared_ptr<Expr> expr = unary();
-        while (match({TokenType::STAR, TokenType::SLASH})) {
+        std::shared_ptr<Expr> expr = exponentiation();
+        while (match({TokenType::STAR, TokenType::SLASH, TokenType::MOD})) {
             Token op = previous();
-            BinaryOp binOp = (op.type == TokenType::STAR) ? BinaryOp::MUL : BinaryOp::DIV;
-            std::shared_ptr<Expr> right = unary();
+            BinaryOp binOp;
+            if (op.type == TokenType::STAR) binOp = BinaryOp::MUL;
+            else if (op.type == TokenType::SLASH) binOp = BinaryOp::DIV;
+            else if (op.type == TokenType::MOD) binOp = BinaryOp::MOD;
+            std::shared_ptr<Expr> right = exponentiation();
             expr = std::make_shared<BinaryExpr>(expr, binOp, right);
+        }
+        return expr;
+    }
+    // New exponentiation method for '^' operator (right-associative)
+    std::shared_ptr<Expr> exponentiation() {
+        std::shared_ptr<Expr> expr = unary();
+        if (match({TokenType::CARET})) {
+            std::shared_ptr<Expr> right = exponentiation();
+            expr = std::make_shared<BinaryExpr>(expr, BinaryOp::POW, right);
         }
         return expr;
     }
@@ -1137,51 +1199,53 @@ private:
         consume(TokenType::RIGHT_PAREN, "Expect ')' after arguments.");
         return std::make_shared<CallExpr>(callee, arguments);
     }
-    std::shared_ptr<Expr> primary();
-};
-
-std::shared_ptr<Expr> Parser::primary() {
-    if (match({TokenType::NUMBER})) {
-        std::string lex = previous().lexeme;
-        if (lex.find('.') != std::string::npos)
-            return std::make_shared<LiteralExpr>(std::stod(lex));
-        else
-            return std::make_shared<LiteralExpr>(std::stoi(lex));
-    }
-    if (match({TokenType::STRING})) {
-        std::string s = previous().lexeme;
-        s = s.substr(1, s.size()-2);
-        return std::make_shared<LiteralExpr>(s);
-    }
-    if (match({TokenType::COLOR})) {
-        std::string s = previous().lexeme;
-        std::string hex = s.substr(2);
-        unsigned int col = std::stoul(hex, nullptr, 16);
-        return std::make_shared<LiteralExpr>(Color{col});
-    }
-    if (match({TokenType::IDENTIFIER})) {
-        Token id = previous();
-        if (toLower(id.lexeme) == "array" && match({TokenType::LEFT_BRACKET})) {
-            std::vector<std::shared_ptr<Expr>> elements;
-            if (!check(TokenType::RIGHT_BRACKET)) {
-                do {
-                    elements.push_back(expression());
-                } while(match({TokenType::COMMA}));
-            }
-            consume(TokenType::RIGHT_BRACKET, "Expect ']' after array literal.");
-            return std::make_shared<ArrayLiteralExpr>(elements);
+    std::shared_ptr<Expr> primary() {
+        if (match({TokenType::NUMBER})) {
+            std::string lex = previous().lexeme;
+            if (lex.find('.') != std::string::npos)
+                return std::make_shared<LiteralExpr>(std::stod(lex));
+            else
+                return std::make_shared<LiteralExpr>(std::stoi(lex));
         }
-        return std::make_shared<VariableExpr>(id.lexeme);
+        if (match({TokenType::STRING})) {
+            std::string s = previous().lexeme;
+            s = s.substr(1, s.size()-2);
+            return std::make_shared<LiteralExpr>(s);
+        }
+        if (match({TokenType::COLOR})) {
+            std::string s = previous().lexeme;
+            std::string hex = s.substr(2);
+            unsigned int col = std::stoul(hex, nullptr, 16);
+            return std::make_shared<LiteralExpr>(Color{col});
+        }
+        if (match({TokenType::BOOLEAN_TRUE}))
+            return std::make_shared<LiteralExpr>(true);
+        if (match({TokenType::BOOLEAN_FALSE}))
+            return std::make_shared<LiteralExpr>(false);
+        if (match({TokenType::IDENTIFIER})) {
+            Token id = previous();
+            if (toLower(id.lexeme) == "array" && match({TokenType::LEFT_BRACKET})) {
+                std::vector<std::shared_ptr<Expr>> elements;
+                if (!check(TokenType::RIGHT_BRACKET)) {
+                    do {
+                        elements.push_back(expression());
+                    } while(match({TokenType::COMMA}));
+                }
+                consume(TokenType::RIGHT_BRACKET, "Expect ']' after array literal.");
+                return std::make_shared<ArrayLiteralExpr>(elements);
+            }
+            return std::make_shared<VariableExpr>(id.lexeme);
+        }
+        if (match({TokenType::LEFT_PAREN})) {
+            std::shared_ptr<Expr> expr = expression();
+            consume(TokenType::RIGHT_PAREN, "Expect ')' after expression.");
+            return std::make_shared<GroupingExpr>(expr);
+        }
+        std::cerr << "Parse error at line " << peek().line << ": Expected expression." << std::endl;
+        exit(1);
+        return nullptr;
     }
-    if (match({TokenType::LEFT_PAREN})) {
-        std::shared_ptr<Expr> expr = expression();
-        consume(TokenType::RIGHT_PAREN, "Expect ')' after expression.");
-        return std::make_shared<GroupingExpr>(expr);
-    }
-    std::cerr << "Parse error at line " << peek().line << ": Expected expression." << std::endl;
-    exit(1);
-    return nullptr;
-}
+};
 
 // ============================================================================
 // Helpers for constant pool management
@@ -1365,6 +1429,8 @@ private:
                 case BinaryOp::EQ:  emit(chunk, OP_EQ); break;
                 case BinaryOp::AND: emit(chunk, OP_AND); break;
                 case BinaryOp::OR:  emit(chunk, OP_OR); break;
+                case BinaryOp::POW: emit(chunk, OP_POW); break;
+                case BinaryOp::MOD: emit(chunk, OP_MOD); break;
                 default: break;
             }
         } else if (auto group = std::dynamic_pointer_cast<GroupingExpr>(expr)) {
@@ -1388,10 +1454,8 @@ private:
             emit(chunk, OP_NEW);
             if (!newExpr->arguments.empty()) {
                 emit(chunk, OP_DUP);
-                // We always try to get the "constructor" property.
                 int consName = addConstantString(chunk, "constructor");
                 emitWithOperand(chunk, OP_GET_PROPERTY, consName);
-                // Instead of a normal call, we use the optional call opcode:
                 emitWithOperand(chunk, OP_OPTIONAL_CALL, newExpr->arguments.size());
                 emit(chunk, OP_CONSTRUCTOR_END);
             }
@@ -1527,6 +1591,24 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                 else if (holds<double>(v))
                     vm.stack.push_back(-getVal<double>(v));
                 else runtimeError("VM: Operand must be a number for negation.");
+                break;
+            }
+            case OP_POW: {
+                Value b = pop(vm), a = pop(vm);
+                double ad = holds<double>(a) ? getVal<double>(a) : static_cast<double>(getVal<int>(a));
+                double bd = holds<double>(b) ? getVal<double>(b) : static_cast<double>(getVal<int>(b));
+                vm.stack.push_back(std::pow(ad, bd));
+                break;
+            }
+            case OP_MOD: {
+                Value b = pop(vm), a = pop(vm);
+                if (holds<int>(a) && holds<int>(b))
+                    vm.stack.push_back(getVal<int>(a) % getVal<int>(b));
+                else {
+                    double ad = holds<double>(a) ? getVal<double>(a) : static_cast<double>(getVal<int>(a));
+                    double bd = holds<double>(b) ? getVal<double>(b) : static_cast<double>(getVal<int>(b));
+                    vm.stack.push_back(std::fmod(ad, bd));
+                }
                 break;
             }
             case OP_LT: {
@@ -1765,35 +1847,42 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                         auto instance = getVal<std::shared_ptr<ObjInstance>>(bound->receiver);
                         std::string key = toLower(bound->name);
                         Value methodVal = instance->klass->methods[key];
-                        std::shared_ptr<ObjFunction> methodFn = nullptr;
-                        if (holds<std::shared_ptr<ObjFunction>>(methodVal)) {
-                            methodFn = getVal<std::shared_ptr<ObjFunction>>(methodVal);
-                        } else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(methodVal)) {
-                            auto overloads = getVal<std::vector<std::shared_ptr<ObjFunction>>>(methodVal);
-                            for (auto f : overloads) {
-                                int total = f->params.size();
-                                int required = f->arity;
-                                if ((int)args.size() >= required && (int)args.size() <= total) {
-                                    methodFn = f;
-                                    break;
+                        // --- NEW: Check if the method is a BuiltinFn ---
+                        if (holds<BuiltinFn>(methodVal)) {
+                            auto fn = getVal<BuiltinFn>(methodVal);
+                            Value result = fn(args);
+                            vm.stack.push_back(result);
+                        } else {
+                            std::shared_ptr<ObjFunction> methodFn = nullptr;
+                            if (holds<std::shared_ptr<ObjFunction>>(methodVal)) {
+                                methodFn = getVal<std::shared_ptr<ObjFunction>>(methodVal);
+                            } else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(methodVal)) {
+                                auto overloads = getVal<std::vector<std::shared_ptr<ObjFunction>>>(methodVal);
+                                for (auto f : overloads) {
+                                    int total = f->params.size();
+                                    int required = f->arity;
+                                    if ((int)args.size() >= required && (int)args.size() <= total) {
+                                        methodFn = f;
+                                        break;
+                                    }
                                 }
                             }
+                            if (!methodFn)
+                                runtimeError("VM: No matching method found for " + bound->name);
+                            auto previousEnv = vm.environment;
+                            vm.environment = std::make_shared<Environment>(previousEnv);
+                            vm.environment->define("self", bound->receiver);
+                            for (size_t i = 0; i < methodFn->params.size(); i++) {
+                                if (i < args.size())
+                                    vm.environment->define(methodFn->params[i].name, args[i]);
+                                else
+                                    vm.environment->define(methodFn->params[i].name, methodFn->params[i].defaultValue);
+                            }
+                            Value result = runVM(vm, methodFn->chunk);
+                            vm.environment = previousEnv;
+                            vm.stack.push_back(result);
+                            debugLog("VM: Function " + methodFn->name + " returned " + valueToString(result));
                         }
-                        if (!methodFn)
-                            runtimeError("VM: No matching method found for " + bound->name);
-                        auto previousEnv = vm.environment;
-                        vm.environment = std::make_shared<Environment>(previousEnv);
-                        vm.environment->define("self", bound->receiver);
-                        for (size_t i = 0; i < methodFn->params.size(); i++) {
-                            if (i < args.size())
-                                vm.environment->define(methodFn->params[i].name, args[i]);
-                            else
-                                vm.environment->define(methodFn->params[i].name, methodFn->params[i].defaultValue);
-                        }
-                        Value result = runVM(vm, methodFn->chunk);
-                        vm.environment = previousEnv;
-                        vm.stack.push_back(result);
-                        debugLog("VM: Function " + methodFn->name + " returned " + valueToString(result));
                     } else if (holds<std::shared_ptr<ObjArray>>(bound->receiver)) {
                         auto array = getVal<std::shared_ptr<ObjArray>>(bound->receiver);
                         Value result = callArrayMethod(array, bound->name, args);
@@ -1858,7 +1947,6 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                 debugLog("OP_OPTIONAL_CALL: callee type: " + getTypeName(callee));
                 if (holds<std::monostate>(callee)) {
                     debugLog("OP_OPTIONAL_CALL: No constructor found; skipping call.");
-                    // Do nothing. The duplicate instance remains on the stack.
                 } else if (holds<std::shared_ptr<ObjFunction>>(callee)) {
                     auto function = getVal<std::shared_ptr<ObjFunction>>(callee);
                     int total = function->params.size();
@@ -2005,9 +2093,8 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                         bound->name = key;
                         vm.stack.push_back(Value(bound));
                     } else if (key == "tostring") {
-                        vm.stack.push_back(std::string("<instance of " + instance->klass->name + ">"));
+                        vm.stack.push_back(valueToString(object));
                     } else {
-                        // Special handling: if "constructor" not defined, return nil.
                         if (key == "constructor") {
                             vm.stack.push_back(Value(std::monostate{}));
                         } else {
@@ -2015,16 +2102,14 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                         }
                     }
                 } else if (holds<int>(object)) {
-                    int num = getVal<int>(object);
                     if (propName == "tostring") {
-                        vm.stack.push_back(std::string(std::to_string(num)));
+                        vm.stack.push_back(valueToString(object));
                     } else {
                         runtimeError("VM: Unknown property for integer: " + propName);
                     }
                 } else if (holds<double>(object)) {
-                    double d = getVal<double>(object);
                     if (propName == "tostring") {
-                        vm.stack.push_back(std::string(std::to_string(d)));
+                        vm.stack.push_back(valueToString(object));
                     } else {
                         runtimeError("VM: Unknown property for double: " + propName);
                     }
@@ -2099,7 +2184,7 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
 // ============================================================================
 int main() {
     startTime = std::chrono::steady_clock::now();
- 
+
     std::ifstream file("test.txt");
     if (!file.is_open()) {
         std::cerr << "Error: Unable to open test.txt" << std::endl;
@@ -2108,17 +2193,17 @@ int main() {
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string source = preprocessSource(buffer.str());
- 
+
     debugLog("Starting lexing...");
     Lexer lexer(source);
     auto tokens = lexer.scanTokens();
     debugLog("Lexing complete. Tokens count: " + std::to_string(tokens.size()));
- 
+
     debugLog("Starting parsing...");
     Parser parser(tokens);
     std::vector<std::shared_ptr<Stmt>> statements = parser.parse();
     debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
- 
+
     VM vm;
     vm.globals = std::make_shared<Environment>(nullptr);
     vm.environment = vm.globals;
@@ -2140,13 +2225,177 @@ int main() {
         arr->elements = args;
         return Value(arr);
     }));
- 
+    // -------------------------------
+    // Math built-in functions:
+    // -------------------------------
+    vm.environment->define("abs", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Abs expects exactly one argument.");
+        if (holds<int>(args[0]))
+            return std::abs(getVal<int>(args[0]));
+        else if (holds<double>(args[0]))
+            return std::fabs(getVal<double>(args[0]));
+        else
+            runtimeError("Abs expects a number.");
+        return Value(std::monostate{});
+    }));
+    vm.environment->define("acos", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Acos expects exactly one argument.");
+        double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Acos expects a number."), 0.0));
+        return std::acos(x);
+    }));
+    vm.environment->define("asc", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Asc expects exactly one argument.");
+        if (!holds<std::string>(args[0]))
+            runtimeError("Asc expects a string.");
+        std::string s = getVal<std::string>(args[0]);
+        if (s.empty()) runtimeError("Asc expects a non-empty string.");
+        return (int)s[0];
+    }));
+    vm.environment->define("asin", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Asin expects exactly one argument.");
+        double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Asin expects a number."), 0.0));
+        return std::asin(x);
+    }));
+    vm.environment->define("atan", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Atan expects exactly one argument.");
+        double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan expects a number."), 0.0));
+        return std::atan(x);
+    }));
+    vm.environment->define("atan2", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) runtimeError("Atan2 expects exactly two arguments.");
+        double y = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan2 expects numbers."), 0.0));
+        double x = holds<int>(args[1]) ? getVal<int>(args[1]) : (holds<double>(args[1]) ? getVal<double>(args[1]) : (runtimeError("Atan2 expects numbers."), 0.0));
+        return std::atan2(y, x);
+    }));
+    vm.environment->define("ceiling", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Ceiling expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Ceiling expects a number."), 0.0));
+        return std::ceil(v);
+    }));
+    vm.environment->define("cos", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Cos expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Cos expects a number."), 0.0));
+        return std::cos(v);
+    }));
+    vm.environment->define("exp", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Exp expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Exp expects a number."), 0.0));
+        return std::exp(v);
+    }));
+    vm.environment->define("floor", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Floor expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Floor expects a number."), 0.0));
+        return std::floor(v);
+    }));
+    vm.environment->define("log", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Log expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Log expects a number."), 0.0));
+        return std::log(v);
+    }));
+    vm.environment->define("max", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) runtimeError("Max expects exactly two arguments.");
+        if (holds<int>(args[0]) && holds<int>(args[1])) {
+            int a = getVal<int>(args[0]), b = getVal<int>(args[1]);
+            return a > b ? a : b;
+        } else {
+            double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
+            return a > b ? a : b;
+        }
+    }));
+    vm.environment->define("min", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) runtimeError("Min expects exactly two arguments.");
+        if (holds<int>(args[0]) && holds<int>(args[1])) {
+            int a = getVal<int>(args[0]), b = getVal<int>(args[1]);
+            return a < b ? a : b;
+        } else {
+            double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
+            return a < b ? a : b;
+        }
+    }));
+    vm.environment->define("oct", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Oct expects exactly one argument.");
+        int n = 0;
+        if (holds<int>(args[0])) n = getVal<int>(args[0]);
+        else if (holds<double>(args[0])) n = static_cast<int>(getVal<double>(args[0]));
+        else runtimeError("Oct expects a number.");
+        std::stringstream ss;
+        ss << std::oct << n;
+        return ss.str();
+    }));
+    vm.environment->define("pow", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) runtimeError("Pow expects exactly two arguments.");
+        double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+        double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
+        return std::pow(a, b);
+    }));
+    vm.environment->define("round", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Round expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+        return std::round(v);
+    }));
+    vm.environment->define("sign", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Sign expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+        if (v < 0) return -1;
+        else if (v == 0) return 0;
+        else return 1;
+    }));
+    vm.environment->define("sin", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Sin expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+        return std::sin(v);
+    }));
+    vm.environment->define("sqrt", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Sqrt expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+        return std::sqrt(v);
+    }));
+    vm.environment->define("tan", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) runtimeError("Tan expects exactly one argument.");
+        double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+        return std::tan(v);
+    }));
+    // Built-in Rnd function: returns a pseudo-random double between 0 and 1.
+    vm.environment->define("rnd", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 0) runtimeError("Rnd expects no arguments.");
+        std::uniform_real_distribution<double> dist(0.0, 1.0);
+        return dist(global_rng);
+    }));
+    // Built-in Random class:
+    {
+        auto randomClass = std::make_shared<ObjClass>();
+        randomClass->name = "random";
+        // Define the InRange method:
+        randomClass->methods["inrange"] = BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) runtimeError("Random.InRange expects exactly two arguments.");
+            int minVal = 0, maxVal = 0;
+            if (holds<int>(args[0]))
+                minVal = getVal<int>(args[0]);
+            else if (holds<double>(args[0]))
+                minVal = static_cast<int>(getVal<double>(args[0]));
+            else
+                runtimeError("Random.InRange expects a number as first argument.");
+            if (holds<int>(args[1]))
+                maxVal = getVal<int>(args[1]);
+            else if (holds<double>(args[1]))
+                maxVal = static_cast<int>(getVal<double>(args[1]));
+            else
+                runtimeError("Random.InRange expects a number as second argument.");
+            if (minVal > maxVal) runtimeError("Random.InRange: min is greater than max.");
+            std::uniform_int_distribution<int> dist(minVal, maxVal);
+            return dist(global_rng);
+        });
+        vm.environment->define("random", randomClass);
+    }
+
     debugLog("Starting compilation...");
     Compiler compiler(vm);
     compiler.compile(statements);
     debugLog("Compilation complete. Main chunk instructions count: " +
              std::to_string(vm.mainChunk.code.size()));
- 
+
     if (vm.environment->values.find("main") != vm.environment->values.end() &&
         (holds<std::shared_ptr<ObjFunction>>(vm.environment->get("main")) ||
          holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
@@ -2170,7 +2419,7 @@ int main() {
         debugLog("No main function found. Executing top-level code...");
         runVM(vm, vm.mainChunk);
     }
- 
+
     debugLog("Program execution finished.");
     return 0;
 }
