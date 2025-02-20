@@ -10,7 +10,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 
 - **Function Support:** Compile and execute user-defined functions and built-in ones.
 - **Class & Instance Support:** Create classes, define methods, and instantiate objects.
-- **Intrinsic Types:** Handles types like Integer, Double, Boolean, Variant and String.
+- **Intrinsic Types:** Handles types like Color, Integer, Double, Boolean, Variant and String.
 - **Bytecode Execution:** Runs compiled bytecode on a custom VM.
 - **Debug Logging:** Step-by-step debug logs to trace lexing, parsing, compiling, and execution.
 - **100%:** Matches Xojo language syntax
