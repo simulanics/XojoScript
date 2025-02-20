@@ -8,7 +8,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 
 ## Features ✨
 
-- **Function Support:** Compile and execute user-defined functions and built-in ones.
+- **Function Support:** Compile and execute user-defined functions and built-in ones. Overloading of functions is permitted.
 - **Class & Instance Support:** Create classes, define methods, and instantiate objects.
 - **Intrinsic Types:** Handles types like Color, Integer, Double, Boolean, Variant and String.
 - **Bytecode Execution:** Runs compiled bytecode on a custom VM.
