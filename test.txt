@@ -335,4 +335,22 @@ x = 2 ^ 3
 Print(Str(x)) 
 Print("Expected Result: 8")
 
+Module MyMod
+  Const pIN as Double = 1.683
+  Const Pi as Double = 3.14
+  Const GRate as Double = 0.22
 
+  Var secret As String = "MySecret123"
+
+  Public Function getRate() as Double
+    Print(secret)
+    Return GRate
+  End Function
+
+End Module
+
+print(str(getRate())) 'Using global name
+Print(str(MyMod.getRate())) 'Using namespace name
+print(str(PIN))
+Print(secret)
+Print(MyMod.secret)
