@@ -29,8 +29,8 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/yourusername/XojoScript-Bytecode-Compiler.git
-   cd XojoScript-Bytecode-Compiler
+   git clone https://github.com/yourusername/XojoScript
+   cd XojoScript
    ```
 2. Compile the Project:
 
