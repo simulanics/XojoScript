@@ -26,7 +26,7 @@
 // ============================================================================
 // Debugging and Time globals
 // ============================================================================
-bool DEBUG_MODE = false; //true; // set to true for debug logging
+bool DEBUG_MODE = false; // set to true for debug logging
 void debugLog(const std::string &msg) {
     if (DEBUG_MODE)
         std::cout << "[DEBUG] " << msg << std::endl;
@@ -45,6 +45,7 @@ struct ObjClass;
 struct ObjInstance;
 struct ObjArray;
 struct ObjBoundMethod;
+struct ObjModule; // NEW: Module object
 
 // ============================================================================
 // New Color type
@@ -80,7 +81,8 @@ struct Value : public std::variant<
     std::shared_ptr<ObjBoundMethod>,
     BuiltinFn,
     PropertiesType,
-    std::vector<std::shared_ptr<ObjFunction>>
+    std::vector<std::shared_ptr<ObjFunction>>,
+    std::shared_ptr<ObjModule>  // NEW: Module type
 > {
     using std::variant<
         std::monostate,
@@ -96,7 +98,8 @@ struct Value : public std::variant<
         std::shared_ptr<ObjBoundMethod>,
         BuiltinFn,
         PropertiesType,
-        std::vector<std::shared_ptr<ObjFunction>>
+        std::vector<std::shared_ptr<ObjFunction>>,
+        std::shared_ptr<ObjModule>
     >::variant;
 };
 
@@ -140,6 +143,7 @@ std::string getTypeName(const Value &v) {
         std::string operator()(const BuiltinFn &) const { return "BuiltinFn"; }
         std::string operator()(const PropertiesType &) const { return "PropertiesType"; }
         std::string operator()(const std::vector<std::shared_ptr<ObjFunction>> &) const { return "OverloadedFunctions"; }
+        std::string operator()(const std::shared_ptr<ObjModule> &) const { return "ObjModule"; }
     } visitor;
     return std::visit(visitor, v);
 }
@@ -153,6 +157,11 @@ struct Param {
     bool optional;
     Value defaultValue;
 };
+
+// ============================================================================
+// Enum for Access Modifiers (for module members)
+// ============================================================================
+enum class AccessModifier { PUBLIC, PRIVATE };
 
 // ============================================================================
 // Object definitions
@@ -185,6 +194,12 @@ struct ObjArray {
 struct ObjBoundMethod {
     Value receiver; // may be an instance or an array
     std::string name;
+};
+
+// NEW: Module object definition
+struct ObjModule {
+    std::string name;
+    std::unordered_map<std::string, Value> publicMembers;
 };
 
 // ============================================================================
@@ -220,6 +235,7 @@ std::string valueToString(const Value &val) {
         std::string operator()(const BuiltinFn &) const { return "<builtin fn>"; }
         std::string operator()(const PropertiesType &) const { return "<properties>"; }
         std::string operator()(const std::vector<std::shared_ptr<ObjFunction>> &) const { return "<overloaded functions>"; }
+        std::string operator()(const std::shared_ptr<ObjModule> &mod) const { return "<module " + mod->name + ">"; }
     } visitor;
     return std::visit(visitor, val);
 }
@@ -231,7 +247,8 @@ enum class TokenType {
     LEFT_PAREN, RIGHT_PAREN, COMMA, PLUS, MINUS, STAR, SLASH, EQUAL,
     DOT, LEFT_BRACKET, RIGHT_BRACKET,
     IDENTIFIER, STRING, NUMBER, COLOR, BOOLEAN_TRUE, BOOLEAN_FALSE,
-    FUNCTION, SUB, END, RETURN, CLASS, NEW, DIM, AS, OPTIONAL, PUBLIC, PRIVATE, PRINT,
+    FUNCTION, SUB, END, RETURN, CLASS, NEW, DIM, AS, OPTIONAL, PUBLIC, PRIVATE,
+    CONST, PRINT,
     IF, THEN, ELSE, ELSEIF,
     FOR, TO, STEP, NEXT,
     WHILE, WEND,
@@ -239,7 +256,8 @@ enum class TokenType {
     LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, NOT_EQUAL,
     EOF_TOKEN,
     CARET, // '^'
-    MOD    // "mod" keyword/operator
+    MOD,   // "mod" keyword/operator
+    MODULE // NEW: Module declaration
 };
 
 struct Token {
@@ -364,6 +382,7 @@ private:
         else if (lowerText == "class")    type = TokenType::CLASS;
         else if (lowerText == "new")      type = TokenType::NEW;
         else if (lowerText == "dim" || lowerText == "var") type = TokenType::DIM;
+        else if (lowerText == "const")    type = TokenType::CONST;
         else if (lowerText == "as")       type = TokenType::AS;
         else if (lowerText == "optional") type = TokenType::OPTIONAL;
         else if (lowerText == "public")   type = TokenType::PUBLIC;
@@ -385,6 +404,7 @@ private:
         else if (lowerText == "mod")      type = TokenType::MOD;
         else if (lowerText == "true")     type = TokenType::BOOLEAN_TRUE;
         else if (lowerText == "false")    type = TokenType::BOOLEAN_FALSE;
+        else if (lowerText == "module")   type = TokenType::MODULE; // NEW: Module keyword
         addToken(type);
     }
 };
@@ -673,7 +693,7 @@ struct NewExpr : Expr {
 // ============================================================================
 // AST Definitions: Statements
 // ============================================================================
-enum class StmtType { EXPRESSION, FUNCTION, RETURN, CLASS, VAR, IF, WHILE, BLOCK, FOR };
+enum class StmtType { EXPRESSION, FUNCTION, RETURN, CLASS, VAR, IF, WHILE, BLOCK, FOR, MODULE };
 
 struct Stmt { virtual ~Stmt() = default; };
 
@@ -691,9 +711,21 @@ struct FunctionStmt : Stmt {
     std::string name;
     std::vector<Param> params;
     std::vector<std::shared_ptr<Stmt>> body;
+    AccessModifier access; // NEW: Access modifier
     FunctionStmt(const std::string &name, const std::vector<Param> &params,
-                 const std::vector<std::shared_ptr<Stmt>> &body)
-        : name(name), params(params), body(body) { }
+                 const std::vector<std::shared_ptr<Stmt>> &body, AccessModifier access = AccessModifier::PUBLIC)
+        : name(name), params(params), body(body), access(access) { }
+};
+
+struct VarStmt : Stmt {
+    std::string name;
+    std::shared_ptr<Expr> initializer;
+    std::string varType;
+    bool isConstant; // NEW: for Const declarations
+    AccessModifier access; // NEW: Access modifier
+    VarStmt(const std::string &name, std::shared_ptr<Expr> initializer, const std::string &varType = "",
+            bool isConstant = false, AccessModifier access = AccessModifier::PUBLIC)
+        : name(name), initializer(initializer), varType(toLower(varType)), isConstant(isConstant), access(access) { }
 };
 
 struct PropertyAssignmentStmt : Stmt {
@@ -714,15 +746,6 @@ struct ClassStmt : Stmt {
         : name(name), methods(methods), properties(properties) { }
 };
 
-struct VarStmt : Stmt {
-    std::string name;
-    std::shared_ptr<Expr> initializer;
-    std::string varType;
-    VarStmt(const std::string &name, std::shared_ptr<Expr> initializer, const std::string &varType = "")
-        : name(name), initializer(initializer), varType(toLower(varType)) { }
-};
-
-// For if–statements we use a single AST node; nested else–if chains are represented by an if–statement in the elseBranch.
 struct IfStmt : Stmt {
     std::shared_ptr<Expr> condition;
     std::vector<std::shared_ptr<Stmt>> thenBranch;
@@ -767,12 +790,20 @@ struct ForStmt : Stmt {
         : varName(varName), start(start), end(end), step(step), body(body) { }
 };
 
+// NEW: Module AST node
+struct ModuleStmt : Stmt {
+    std::string name;
+    std::vector<std::shared_ptr<Stmt>> body;
+    ModuleStmt(const std::string &name, const std::vector<std::shared_ptr<Stmt>> &body)
+        : name(name), body(body) { }
+};
+
 // ============================================================================
 // Parser
 // ============================================================================
 class Parser {
 public:
-    Parser(const std::vector<Token> &tokens) : tokens(tokens) {}
+    Parser(const std::vector<Token> &tokens) : tokens(tokens), inModule(false) {}
     std::vector<std::shared_ptr<Stmt>> parse() {
         debugLog("Parser: Starting parse. Total tokens: " + std::to_string(tokens.size()));
         std::vector<std::shared_ptr<Stmt>> statements;
@@ -785,7 +816,8 @@ public:
 private:
     std::vector<Token> tokens;
     int current = 0;
-   
+    bool inModule; // NEW: Flag to indicate module context
+
     bool isAtEnd() { return peek().type == TokenType::EOF_TOKEN; }
     Token peek() { return tokens[current]; }
     Token previous() { return tokens[current-1]; }
@@ -824,8 +856,26 @@ private:
                 return false;
         }
     }
+    // NEW: Parse module declaration
+    std::shared_ptr<Stmt> moduleDeclaration() {
+        Token name = consume(TokenType::IDENTIFIER, "Expect module name.");
+        bool oldInModule = inModule;
+        inModule = true;
+        std::vector<std::shared_ptr<Stmt>> body = block({TokenType::END});
+        consume(TokenType::END, "Expect 'End' after module body.");
+        consume(TokenType::MODULE, "Expect 'Module' after End in module declaration.");
+        inModule = oldInModule;
+        return std::make_shared<ModuleStmt>(name.lexeme, body);
+    }
+    // Modified declaration to capture access modifiers in module context.
     std::shared_ptr<Stmt> declaration() {
-        while (match({TokenType::PUBLIC, TokenType::PRIVATE})) { }
+        AccessModifier access = AccessModifier::PUBLIC;
+        if (inModule && (check(TokenType::PUBLIC) || check(TokenType::PRIVATE))) {
+            if (match({TokenType::PUBLIC})) access = AccessModifier::PUBLIC;
+            else if (match({TokenType::PRIVATE})) access = AccessModifier::PRIVATE;
+        }
+        if (check(TokenType::MODULE))
+            return (advance(), moduleDeclaration());
         if (check(TokenType::IDENTIFIER) && (current+3 < tokens.size() &&
             tokens[current+1].type == TokenType::DOT &&
             tokens[current+2].type == TokenType::IDENTIFIER &&
@@ -838,11 +888,14 @@ private:
             return std::make_shared<PropertyAssignmentStmt>(std::make_shared<VariableExpr>(obj.lexeme), prop.lexeme, valueExpr);
         }
         if (match({TokenType::FUNCTION, TokenType::SUB}))
-            return functionDeclaration();
+            return functionDeclaration(access);
         if (match({TokenType::CLASS}))
             return classDeclaration();
+        // NEW: Support Const declarations in modules; outside modules, only DIM is allowed.
+        if (inModule && match({TokenType::CONST}))
+            return varDeclaration(access, true);
         if (match({TokenType::DIM}))
-            return varDeclaration();
+            return varDeclaration(access, false);
         if (match({TokenType::IF}))
             return ifStatement();
         if (match({TokenType::FOR}))
@@ -857,7 +910,7 @@ private:
         }
         return statement();
     }
-    std::shared_ptr<Stmt> functionDeclaration() {
+    std::shared_ptr<Stmt> functionDeclaration(AccessModifier access) {
         Token name = consume(TokenType::IDENTIFIER, "Expect function name.");
         consume(TokenType::LEFT_PAREN, "Expect '(' after function name.");
         std::vector<Param> parameters;
@@ -891,7 +944,7 @@ private:
         int req = 0;
         for (auto &p : parameters)
             if (!p.optional) req++;
-        return std::make_shared<FunctionStmt>(name.lexeme, parameters, body);
+        return std::make_shared<FunctionStmt>(name.lexeme, parameters, body, access);
     }
     std::shared_ptr<Stmt> classDeclaration() {
         Token name = consume(TokenType::IDENTIFIER, "Expect class name.");
@@ -959,7 +1012,7 @@ private:
         consume(TokenType::CLASS, "Expect 'Class' after End.");
         return std::make_shared<ClassStmt>(name.lexeme, methods, properties);
     }
-    std::shared_ptr<Stmt> varDeclaration() {
+    std::shared_ptr<Stmt> varDeclaration(AccessModifier access, bool isConstant) {
         Token name = consume(TokenType::IDENTIFIER, "Expect variable name.");
         bool isArray = false;
         if (match({TokenType::LEFT_PAREN})) {
@@ -1007,7 +1060,7 @@ private:
             initializer = expression();
         else if (isArray)
             initializer = std::make_shared<ArrayLiteralExpr>(std::vector<std::shared_ptr<Expr>>{});
-        return std::make_shared<VarStmt>(name.lexeme, initializer, typeStr);
+        return std::make_shared<VarStmt>(name.lexeme, initializer, typeStr, isConstant, access);
     }
     // ---- Updated ifStatement to support elseif chains ----
     std::shared_ptr<Stmt> ifStatement() {
@@ -1271,7 +1324,7 @@ int addConstantString(ObjFunction::CodeChunk &chunk, const std::string &s) {
 // ============================================================================
 class Compiler {
 public:
-    Compiler(VM &virtualMachine) : vm(virtualMachine) {}
+    Compiler(VM &virtualMachine) : vm(virtualMachine), compilingModule(false) {}
     void compile(const std::vector<std::shared_ptr<Stmt>> &stmts) {
         for (auto stmt : stmts) {
             compileStmt(stmt, vm.mainChunk);
@@ -1281,6 +1334,10 @@ public:
     }
 private:
     VM &vm;
+    bool compilingModule; // NEW: flag indicating if compiling a module
+    std::string currentModuleName; // NEW: current module name
+    std::unordered_map<std::string, Value> currentModulePublicMembers; // NEW: public members of current module
+
     void emit(ObjFunction::CodeChunk &chunk, int byte) {
         chunk.code.push_back(byte);
     }
@@ -1289,6 +1346,32 @@ private:
         emit(chunk, operand);
     }
     void compileStmt(std::shared_ptr<Stmt> stmt, ObjFunction::CodeChunk &chunk) {
+        // NEW: Handle module declarations
+        if (auto modStmt = std::dynamic_pointer_cast<ModuleStmt>(stmt)) {
+            auto previousEnv = vm.environment;
+            auto moduleEnv = std::make_shared<Environment>(previousEnv);
+            vm.environment = moduleEnv;
+            bool oldCompilingModule = compilingModule;
+            compilingModule = true;
+            currentModuleName = toLower(modStmt->name);
+            currentModulePublicMembers.clear();
+            // Compile module body; module members will be defined in moduleEnv
+            for (auto s : modStmt->body)
+                compileStmt(s, chunk);
+            // Create module object
+            auto moduleObj = std::make_shared<ObjModule>();
+            moduleObj->name = currentModuleName;
+            moduleObj->publicMembers = currentModulePublicMembers;
+            // Restore environment
+            vm.environment = previousEnv;
+            compilingModule = oldCompilingModule;
+            // Define module object in global environment and add its public members as globals
+            vm.environment->define(toLower(currentModuleName), Value(moduleObj));
+            for (auto &entry : currentModulePublicMembers) {
+                vm.environment->define(entry.first, entry.second);
+            }
+            return;
+        }
         if (auto exprStmt = std::dynamic_pointer_cast<ExpressionStmt>(stmt)) {
             compileExpr(exprStmt->expression, chunk);
             emit(chunk, OP_POP);
@@ -1299,7 +1382,8 @@ private:
                 emit(chunk, OP_NIL);
             emit(chunk, OP_RETURN);
         } else if (auto funcStmt = std::dynamic_pointer_cast<FunctionStmt>(stmt)) {
-            auto placeholder = std::make_shared<ObjFunction>();
+            // In module, do not emit global definitions; simply compile and record public members
+            std::shared_ptr<ObjFunction> placeholder = std::make_shared<ObjFunction>();
             placeholder->name = funcStmt->name;
             int req = 0;
             for (auto &p : funcStmt->params)
@@ -1309,10 +1393,16 @@ private:
             vm.environment->define(toLower(funcStmt->name), Value(placeholder));
             compileFunction(funcStmt);
             vm.environment->assign(toLower(funcStmt->name), Value(lastFunction));
-            int fnConst = addConstant(chunk, vm.environment->get(toLower(funcStmt->name)));
-            emitWithOperand(chunk, OP_CONSTANT, fnConst);
-            int nameConst = addConstantString(chunk, toLower(funcStmt->name));
-            emitWithOperand(chunk, OP_DEFINE_GLOBAL, nameConst);
+            if (!compilingModule) {
+                int fnConst = addConstant(chunk, vm.environment->get(toLower(funcStmt->name)));
+                emitWithOperand(chunk, OP_CONSTANT, fnConst);
+                int nameConst = addConstantString(chunk, toLower(funcStmt->name));
+                emitWithOperand(chunk, OP_DEFINE_GLOBAL, nameConst);
+            } else {
+                if (funcStmt->access == AccessModifier::PUBLIC) {
+                    currentModulePublicMembers[toLower(funcStmt->name)] = vm.environment->get(toLower(funcStmt->name));
+                }
+            }
         } else if (auto varStmt = std::dynamic_pointer_cast<VarStmt>(stmt)) {
             if (varStmt->initializer)
                 compileExpr(varStmt->initializer, chunk);
@@ -1328,8 +1418,17 @@ private:
                 else
                     compileExpr(std::make_shared<LiteralExpr>(std::monostate{}), chunk);
             }
-            int nameConst = addConstantString(chunk, toLower(varStmt->name));
-            emitWithOperand(chunk, OP_DEFINE_GLOBAL, nameConst);
+            if (!compilingModule) {
+                int nameConst = addConstantString(chunk, toLower(varStmt->name));
+                emitWithOperand(chunk, OP_DEFINE_GLOBAL, nameConst);
+            } else {
+                if (auto lit = std::dynamic_pointer_cast<LiteralExpr>(varStmt->initializer)) {
+                    if (varStmt->access == AccessModifier::PUBLIC) {
+                        currentModulePublicMembers[toLower(varStmt->name)] = lit->value;
+                    }
+                    vm.environment->define(toLower(varStmt->name), lit->value);
+                }
+            }
         } else if (auto classStmt = std::dynamic_pointer_cast<ClassStmt>(stmt)) {
             int nameConst = addConstantString(chunk, toLower(classStmt->name));
             emitWithOperand(chunk, OP_CLASS, nameConst);
@@ -1847,7 +1946,6 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                         auto instance = getVal<std::shared_ptr<ObjInstance>>(bound->receiver);
                         std::string key = toLower(bound->name);
                         Value methodVal = instance->klass->methods[key];
-                        // --- NEW: Check if the method is a BuiltinFn ---
                         if (holds<BuiltinFn>(methodVal)) {
                             auto fn = getVal<BuiltinFn>(methodVal);
                             Value result = fn(args);
@@ -2120,6 +2218,13 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
                     } else {
                         runtimeError("VM: Unknown property for string: " + propName);
                     }
+                } else if (holds<std::shared_ptr<ObjModule>>(object)) {
+                    auto module = getVal<std::shared_ptr<ObjModule>>(object);
+                    std::string key = toLower(propName);
+                    if (module->publicMembers.find(key) != module->publicMembers.end())
+                         vm.stack.push_back(module->publicMembers[key]);
+                    else
+                         runtimeError("VM: Undefined module property: " + propName);
                 } else {
                     runtimeError("VM: Property access on unsupported type.");
                 }
