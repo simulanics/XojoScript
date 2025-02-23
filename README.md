@@ -37,7 +37,13 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 For example, using g++:
 
 ```
-g++ -std=c++17 -o xojoscript xojoscript.cpp
+g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
+```
+
+With speed optimizations:
+
+```
+g++ -o xojoscript xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto
 ```
 
 3. Prepare Your Script:
