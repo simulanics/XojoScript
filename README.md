@@ -65,7 +65,7 @@ End Sub
 
 ```
 ./xojoscript --s filename
-(*currently compiles test.txt file and immediately runs it in the VM)
+(*currently compiles test.txt file and immediately runs it in the VM if no source file is specified.)
 ```
 
 Debugging 🔍
@@ -86,7 +86,7 @@ License 📄
 
 This project is licensed under the MIT License. See the LICENSE file for details.
 
-**This is currently a basic working proof-of-concept to be expanded upon.
+**This is currently a working proof-of-concept to be expanded upon.
 ---
 
 Happy coding! 😄
