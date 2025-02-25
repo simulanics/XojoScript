@@ -1,9 +1,9 @@
-// Xojoscript Bytecode Compiler and Virtual Machine
-// Created by Matthew A Combatti
-// Simulanics Technologies and Xojo Developers Studio
-//simulanics.com
-//xojostudio.org
-//License: MIT
+// Xojoscript Bytecode Compiler and Virtual Machine  
+// Created by Matthew A Combatti  
+// Simulanics Technologies and Xojo Developers Studio  
+// simulanics.com  
+// xojostudio.org  
+// License: MIT
 
 #include <iostream>
 #include <fstream>
@@ -23,8 +23,8 @@
 #include <random>
 #include <iomanip>
 
-// ============================================================================
-// Debugging and Time globals
+// ============================================================================  
+// Debugging and Time globals  
 // ============================================================================
 bool DEBUG_MODE = false; // set to true for debug logging
 void debugLog(const std::string &msg) {
@@ -33,11 +33,11 @@ void debugLog(const std::string &msg) {
 }
 std::chrono::steady_clock::time_point startTime;
 
-// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------  
 // Global random engine used by built-in rnd (and random class)
 std::mt19937 global_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
-// ============================================================================
+// ============================================================================  
 // Forward declarations for object types
 // ============================================================================
 struct ObjFunction;
@@ -47,24 +47,25 @@ struct ObjArray;
 struct ObjBoundMethod;
 struct ObjModule; // NEW: Module object
 
-// ============================================================================
-// New Color type
+// ============================================================================  
+// New Color type  
 // In Xojo a color literal is written as &cRRGGBB (hexadecimal).
+// ============================================================================
 struct Color {
     unsigned int value;
 };
 
-// ============================================================================
+// ============================================================================  
 // Built-in function type
 // ============================================================================
 using BuiltinFn = std::function<struct Value(const std::vector<struct Value>&)>;
 
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------  
 // For class property defaults we use a property map
 // ----------------------------------------------------------------------------
 using PropertiesType = std::vector<std::pair<std::string, struct Value>>;
 
-// ============================================================================
+// ============================================================================  
 // Dynamic Value type – a wrapper around std::variant
 // ============================================================================
 struct Value : public std::variant<
@@ -82,7 +83,7 @@ struct Value : public std::variant<
     BuiltinFn,
     PropertiesType,
     std::vector<std::shared_ptr<ObjFunction>>,
-    std::shared_ptr<ObjModule>  // NEW: Module type
+    std::shared_ptr<ObjModule>
 > {
     using std::variant<
         std::monostate,
@@ -103,7 +104,7 @@ struct Value : public std::variant<
     >::variant;
 };
 
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------  
 // Helper templates for type queries and access.
 // ----------------------------------------------------------------------------
 template<typename T>
@@ -115,7 +116,7 @@ T getVal(const Value &v) {
     return std::get<T>(v);
 }
 
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------  
 // Helper: Convert a string to lowercase
 // ----------------------------------------------------------------------------
 std::string toLower(const std::string &s) {
@@ -124,7 +125,7 @@ std::string toLower(const std::string &s) {
     return ret;
 }
 
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------  
 // Helper: Return a string naming the underlying type of a Value.
 // ----------------------------------------------------------------------------
 std::string getTypeName(const Value &v) {
@@ -148,7 +149,7 @@ std::string getTypeName(const Value &v) {
     return std::visit(visitor, v);
 }
 
-// ============================================================================
+// ============================================================================  
 // Parameter structure for functions/methods
 // ============================================================================
 struct Param {
@@ -158,12 +159,12 @@ struct Param {
     Value defaultValue;
 };
 
-// ============================================================================
+// ============================================================================  
 // Enum for Access Modifiers (for module members)
 // ============================================================================
 enum class AccessModifier { PUBLIC, PRIVATE };
 
-// ============================================================================
+// ============================================================================  
 // Object definitions
 // ============================================================================
 struct ObjFunction {
@@ -202,7 +203,7 @@ struct ObjModule {
     std::unordered_map<std::string, Value> publicMembers;
 };
 
-// ============================================================================
+// ============================================================================  
 // valueToString – visitor for Value conversion (with trailing zero trimming)
 // ============================================================================
 std::string valueToString(const Value &val) {
@@ -240,7 +241,7 @@ std::string valueToString(const Value &val) {
     return std::visit(visitor, val);
 }
 
-// ============================================================================
+// ============================================================================  
 // Token and TokenType Definitions
 // ============================================================================
 enum class TokenType {
@@ -257,7 +258,10 @@ enum class TokenType {
     EOF_TOKEN,
     CARET, // '^'
     MOD,   // "mod" keyword/operator
-    MODULE // NEW: Module declaration
+    MODULE, // NEW: Module declaration
+    DECLARE, // NEW: Declare keyword
+    SELECT,  // NEW: Select keyword for Select Case statement
+    CASE     // NEW: Case keyword for Select Case statement
 };
 
 struct Token {
@@ -266,7 +270,7 @@ struct Token {
     int line;
 };
 
-// ============================================================================
+// ============================================================================  
 // Lexer
 // ============================================================================
 class Lexer {
@@ -306,7 +310,7 @@ private:
             case '+': addToken(TokenType::PLUS); break;
             case '-': addToken(TokenType::MINUS); break;
             case '*': addToken(TokenType::STAR); break;
-            case '/':   
+            case '/':
                 if (peek() == '/' || peek() == '\'') {
                     while (peek() != '\n' && !isAtEnd()) advance();
                 } else {
@@ -327,7 +331,7 @@ private:
             case '.': addToken(TokenType::DOT); break;
             case '[': addToken(TokenType::LEFT_BRACKET); break;
             case ']': addToken(TokenType::RIGHT_BRACKET); break;
-            case '&': {   
+            case '&': {
                 if (peek() == 'c' || peek() == 'C') {
                     advance(); // consume 'c'
                     std::string hex;
@@ -344,7 +348,7 @@ private:
             case '\t': break;
             case '\n': line++; break;
             case '"': string(); break;
-            case '\'': 
+            case '\'':   
                 while (peek() != '\n' && !isAtEnd()) advance();
                 break;
             default:
@@ -404,12 +408,15 @@ private:
         else if (lowerText == "mod")      type = TokenType::MOD;
         else if (lowerText == "true")     type = TokenType::BOOLEAN_TRUE;
         else if (lowerText == "false")    type = TokenType::BOOLEAN_FALSE;
-        else if (lowerText == "module")   type = TokenType::MODULE; // NEW: Module keyword
+        else if (lowerText == "module")   type = TokenType::MODULE;
+        else if (lowerText == "declare")  type = TokenType::DECLARE; // NEW: Declare keyword
+        else if (lowerText == "select")   type = TokenType::SELECT;
+        else if (lowerText == "case")     type = TokenType::CASE;
         addToken(type);
     }
 };
 
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------  
 // Helper function to trim trailing whitespace
 // ----------------------------------------------------------------------------
 std::string rtrim(const std::string &s) {
@@ -418,7 +425,7 @@ std::string rtrim(const std::string &s) {
     return s.substr(0, end + 1);
 }
 
-// ============================================================================
+// ============================================================================  
 // Environment (case–insensitive for variable names)
 // ============================================================================
 struct Environment {
@@ -471,7 +478,7 @@ struct Environment {
     }
 };
 
-// ============================================================================
+// ============================================================================  
 // Runtime error helper
 // ============================================================================
 [[noreturn]] void runtimeError(const std::string &msg) {
@@ -479,7 +486,7 @@ struct Environment {
     exit(1);
 }
 
-// ============================================================================
+// ============================================================================  
 // Preprocessing: Remove line continuations and comments
 // ============================================================================
 std::string preprocessSource(const std::string &source) {
@@ -503,7 +510,7 @@ std::string preprocessSource(const std::string &source) {
     return result;
 }
 
-// ============================================================================
+// ============================================================================  
 // Bytecode Instructions
 // ============================================================================
 enum OpCode {
@@ -587,7 +594,7 @@ std::string opcodeToString(int opcode) {
     }
 }
 
-// ============================================================================
+// ============================================================================  
 // Virtual Machine
 // ============================================================================
 struct VM {
@@ -597,7 +604,7 @@ struct VM {
     ObjFunction::CodeChunk mainChunk;
 };
 
-// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------  
 // Helper: pop from VM stack (with logging)
 // ----------------------------------------------------------------------------
 Value pop(VM &vm) {
@@ -610,7 +617,7 @@ Value pop(VM &vm) {
     return v;
 }
 
-// ============================================================================
+// ============================================================================  
 // AST Definitions: Expressions
 // ============================================================================
 enum class BinaryOp { ADD, SUB, MUL, DIV, LT, LE, GT, GE, NE, EQ, AND, OR, POW, MOD };
@@ -690,10 +697,10 @@ struct NewExpr : Expr {
       : className(toLower(className)), arguments(arguments) { }
 };
 
-// ============================================================================
+// ============================================================================  
 // AST Definitions: Statements
 // ============================================================================
-enum class StmtType { EXPRESSION, FUNCTION, RETURN, CLASS, VAR, IF, WHILE, BLOCK, FOR, MODULE };
+enum class StmtType { EXPRESSION, FUNCTION, RETURN, CLASS, VAR, IF, WHILE, BLOCK, FOR, MODULE, DECLARE };
 
 struct Stmt { virtual ~Stmt() = default; };
 
@@ -798,7 +805,23 @@ struct ModuleStmt : Stmt {
         : name(name), body(body) { }
 };
 
-// ============================================================================
+// NEW: Declare API statement AST node
+struct DeclareStmt : Stmt {
+    bool isFunction; // true if Function, false if Sub
+    std::string apiName;
+    std::string libraryName;
+    std::string aliasName;    // optional; empty if not provided
+    std::string selector;     // optional; empty if not provided
+    std::vector<Param> params;
+    std::string returnType;   // if function; empty for Sub
+    DeclareStmt(bool isFunc, const std::string &name, const std::string &lib,
+                const std::string &alias, const std::string &sel,
+                const std::vector<Param> &params, const std::string &retType)
+      : isFunction(isFunc), apiName(name), libraryName(lib), aliasName(alias),
+        selector(sel), params(params), returnType(retType) { }
+};
+
+// ============================================================================  
 // Parser
 // ============================================================================
 class Parser {
@@ -867,6 +890,82 @@ private:
         inModule = oldInModule;
         return std::make_shared<ModuleStmt>(name.lexeme, body);
     }
+    // NEW: Parse Declare statement
+    std::shared_ptr<Stmt> declareStatement() {
+        // Already consumed "Declare"
+        // Next must be either "Sub" or "Function"
+        bool isFunc;
+        if (match({TokenType::SUB}))
+            isFunc = false;
+        else if (match({TokenType::FUNCTION}))
+            isFunc = true;
+        else {
+            std::cerr << "Parse error at line " << peek().line << ": Expected Sub or Function after Declare." << std::endl;
+            exit(1);
+        }
+        // API name
+        Token nameTok = consume(TokenType::IDENTIFIER, "Expect API name in Declare statement.");
+        std::string apiName = nameTok.lexeme;
+        // Expect the keyword "lib" (case-insensitive)
+        Token libTok = consume(TokenType::IDENTIFIER, "Expect 'Lib' keyword in Declare statement.");
+        if (toLower(libTok.lexeme) != "lib") {
+            std::cerr << "Parse error at line " << libTok.line << ": Expected 'Lib' keyword in Declare statement." << std::endl;
+            exit(1);
+        }
+        // Library name (a string literal)
+        Token libNameTok = consume(TokenType::STRING, "Expect library name (a string literal) in Declare statement.");
+        // Remove quotes from string literal
+        std::string libraryName = libNameTok.lexeme.substr(1, libNameTok.lexeme.size()-2);
+        // Optionally, Alias
+        std::string aliasName = "";
+        if (check(TokenType::IDENTIFIER) && toLower(peek().lexeme) == "alias") {
+            advance(); // consume "alias"
+            Token aliasTok = consume(TokenType::STRING, "Expect alias name (a string literal) in Declare statement.");
+            aliasName = aliasTok.lexeme.substr(1, aliasTok.lexeme.size()-2);
+        }
+        // Optionally, Selector
+        std::string selector = "";
+        if (check(TokenType::IDENTIFIER) && toLower(peek().lexeme) == "selector") {
+            advance(); // consume "selector"
+            Token selTok = consume(TokenType::STRING, "Expect selector (a string literal) in Declare statement.");
+            selector = selTok.lexeme.substr(1, selTok.lexeme.size()-2);
+        }
+        // Parameter list in parentheses
+        std::vector<Param> params;
+        consume(TokenType::LEFT_PAREN, "Expect '(' for parameter list in Declare statement.");
+        if (!check(TokenType::RIGHT_PAREN)) {
+            do {
+                // For simplicity, we assume parameters are declared as: [Optional] paramName [As Type] [= default]
+                bool isOptional = false;
+                if (match({TokenType::OPTIONAL})) { isOptional = true; }
+                Token paramNameTok = consume(TokenType::IDENTIFIER, "Expect parameter name in Declare statement.");
+                std::string paramName = paramNameTok.lexeme;
+                std::string paramType = "";
+                if (match({TokenType::AS})) {
+                    Token typeTok = consume(TokenType::IDENTIFIER, "Expect type after 'As' in parameter list.");
+                    paramType = toLower(typeTok.lexeme);
+                }
+                Value defaultValue = Value(std::monostate{});
+                if (isOptional && match({TokenType::EQUAL})) {
+                    std::shared_ptr<Expr> defaultExpr = expression();
+                    if (auto lit = std::dynamic_pointer_cast<LiteralExpr>(defaultExpr))
+                        defaultValue = lit->value;
+                    else
+                        runtimeError("Optional parameter default value must be a literal.");
+                }
+                params.push_back({paramName, paramType, isOptional, defaultValue});
+            } while (match({TokenType::COMMA}));
+        }
+        consume(TokenType::RIGHT_PAREN, "Expect ')' after parameter list in Declare statement.");
+        // Optionally, if function, return type specified by "As"
+        std::string retType = "";
+        if (isFunc && check(TokenType::AS)) {
+            advance(); // consume "as"
+            Token retTok = consume(TokenType::IDENTIFIER, "Expect return type after 'As' in Declare statement.");
+            retType = toLower(retTok.lexeme);
+        }
+        return std::make_shared<DeclareStmt>(isFunc, apiName, libraryName, aliasName, selector, params, retType);
+    }
     // Modified declaration to capture access modifiers in module context.
     std::shared_ptr<Stmt> declaration() {
         AccessModifier access = AccessModifier::PUBLIC;
@@ -876,6 +975,10 @@ private:
         }
         if (check(TokenType::MODULE))
             return (advance(), moduleDeclaration());
+        if (check(TokenType::DECLARE))
+            return (advance(), declareStatement()); // NEW: handle Declare
+        if (check(TokenType::SELECT))
+            return (advance(), selectCaseStatement());
         if (check(TokenType::IDENTIFIER) && (current+3 < tokens.size() &&
             tokens[current+1].type == TokenType::DOT &&
             tokens[current+2].type == TokenType::IDENTIFIER &&
@@ -891,8 +994,7 @@ private:
             return functionDeclaration(access);
         if (match({TokenType::CLASS}))
             return classDeclaration();
-        // NEW: Support Const declarations in modules; outside modules, only DIM is allowed.
-        if (inModule && match({TokenType::CONST}))
+        if (match({TokenType::CONST}))
             return varDeclaration(access, true);
         if (match({TokenType::DIM}))
             return varDeclaration(access, false);
@@ -1298,9 +1400,62 @@ private:
         exit(1);
         return nullptr;
     }
+    
+    // ***** NEW: selectCaseStatement() to support "Select Case" constructs *****
+    std::shared_ptr<Stmt> selectCaseStatement() {
+        // We have already consumed the "Select" token.
+        // Next token must be "Case" (as in: "Select Case <expression>")
+        consume(TokenType::CASE, "Expect 'Case' after 'Select' in Select Case statement.");
+        std::shared_ptr<Expr> switchExpr = expression();
+        // Define a structure to hold each case clause.
+        struct CaseClause {
+            bool isDefault;
+            std::shared_ptr<Expr> expr; // valid if not default
+            std::vector<std::shared_ptr<Stmt>> statements;
+        };
+        std::vector<CaseClause> clauses;
+        // Parse one or more case clauses until we hit "End"
+        while (!check(TokenType::END)) {
+            consume(TokenType::CASE, "Expect 'Case' at start of case clause.");
+            CaseClause clause;
+            // If the clause is "Case Else"
+            if (match({TokenType::ELSE})) {
+                clause.isDefault = true;
+            } else {
+                clause.isDefault = false;
+                clause.expr = expression();
+            }
+            // Parse the statements for this clause; stop at next "Case" or "End"
+            clause.statements = block({TokenType::CASE, TokenType::END});
+            clauses.push_back(clause);
+        }
+        // Now require "End Select"
+        consume(TokenType::END, "Expect 'End' after Select Case statement.");
+        consume(TokenType::SELECT, "Expect 'Select' after 'End' in Select Case statement.");
+        // Convert the select-case into an if-chain.
+        // We build a nested if-statement chain where each non-default case becomes:
+        //    if (switchExpr == caseValue) then { caseStatements } else { nextClause }
+        // and a default clause becomes the final else branch.
+        std::vector<std::shared_ptr<Stmt>> currentElse;
+        for (int i = clauses.size() - 1; i >= 0; i--) {
+            if (clauses[i].isDefault) {
+                currentElse = clauses[i].statements;
+            } else {
+                auto condition = std::make_shared<BinaryExpr>(switchExpr, BinaryOp::EQ, clauses[i].expr);
+                auto ifStmt = std::make_shared<IfStmt>(condition, clauses[i].statements, currentElse);
+                currentElse.clear();
+                currentElse.push_back(ifStmt);
+            }
+        }
+        if (currentElse.empty()) {
+            return std::make_shared<BlockStmt>(std::vector<std::shared_ptr<Stmt>>{});
+        }
+        return currentElse[0];
+    }
+    // ***** End of Select Case support *****
 };
 
-// ============================================================================
+// ============================================================================  
 // Helpers for constant pool management
 // ============================================================================
 int addConstant(ObjFunction::CodeChunk &chunk, const Value &v) {
@@ -1319,7 +1474,7 @@ int addConstantString(ObjFunction::CodeChunk &chunk, const std::string &s) {
     return chunk.constants.size() - 1;
 }
 
-// ============================================================================
+// ============================================================================  
 // Compiler
 // ============================================================================
 class Compiler {
@@ -1346,7 +1501,6 @@ private:
         emit(chunk, operand);
     }
     void compileStmt(std::shared_ptr<Stmt> stmt, ObjFunction::CodeChunk &chunk) {
-        // NEW: Handle module declarations
         if (auto modStmt = std::dynamic_pointer_cast<ModuleStmt>(stmt)) {
             auto previousEnv = vm.environment;
             auto moduleEnv = std::make_shared<Environment>(previousEnv);
@@ -1355,24 +1509,24 @@ private:
             compilingModule = true;
             currentModuleName = toLower(modStmt->name);
             currentModulePublicMembers.clear();
-            // Compile module body; module members will be defined in moduleEnv
             for (auto s : modStmt->body)
                 compileStmt(s, chunk);
-            // Create module object
             auto moduleObj = std::make_shared<ObjModule>();
             moduleObj->name = currentModuleName;
             moduleObj->publicMembers = currentModulePublicMembers;
-            // Restore environment
             vm.environment = previousEnv;
             compilingModule = oldCompilingModule;
-            // Define module object in global environment and add its public members as globals
             vm.environment->define(toLower(currentModuleName), Value(moduleObj));
             for (auto &entry : currentModulePublicMembers) {
                 vm.environment->define(entry.first, entry.second);
             }
             return;
         }
-        if (auto exprStmt = std::dynamic_pointer_cast<ExpressionStmt>(stmt)) {
+        // NEW: Handle Declare statements
+        else if (auto declStmt = std::dynamic_pointer_cast<DeclareStmt>(stmt)) {
+            compileDeclare(declStmt, chunk);
+        }
+        else if (auto exprStmt = std::dynamic_pointer_cast<ExpressionStmt>(stmt)) {
             compileExpr(exprStmt->expression, chunk);
             emit(chunk, OP_POP);
         } else if (auto retStmt = std::dynamic_pointer_cast<ReturnStmt>(stmt)) {
@@ -1382,7 +1536,6 @@ private:
                 emit(chunk, OP_NIL);
             emit(chunk, OP_RETURN);
         } else if (auto funcStmt = std::dynamic_pointer_cast<FunctionStmt>(stmt)) {
-            // In module, do not emit global definitions; simply compile and record public members
             std::shared_ptr<ObjFunction> placeholder = std::make_shared<ObjFunction>();
             placeholder->name = funcStmt->name;
             int req = 0;
@@ -1491,6 +1644,31 @@ private:
                 compileStmt(s, chunk);
         }
     }
+    // NEW: compileDeclare for API declarations
+    void compileDeclare(std::shared_ptr<DeclareStmt> declStmt, ObjFunction::CodeChunk &chunk) {
+        // Create a lambda (BuiltinFn) that captures the API details.
+        BuiltinFn apiFunc = [decl = *declStmt](const std::vector<Value>& args) -> Value {
+            std::cout << "Calling API: " << decl.apiName << " from library: " << decl.libraryName << std::endl;
+            std::cout << "Alias: " << (decl.aliasName.empty() ? "<none>" : decl.aliasName)
+                      << " Selector: " << (decl.selector.empty() ? "<none>" : decl.selector) << std::endl;
+            std::cout << "Arguments: ";
+            for (auto &arg : args)
+                std::cout << valueToString(arg) << " ";
+            std::cout << std::endl;
+            // For now, return nil (or 0 if a function and return type is numeric)
+            return Value(std::monostate{});
+        };
+        // Define the API as a global variable.
+        vm.environment->define(toLower(declStmt->apiName), Value(apiFunc));
+        if (!compilingModule) {
+            int fnConst = addConstant(chunk, vm.environment->get(toLower(declStmt->apiName)));
+            emitWithOperand(chunk, OP_CONSTANT, fnConst);
+            int nameConst = addConstantString(chunk, toLower(declStmt->apiName));
+            emitWithOperand(chunk, OP_DEFINE_GLOBAL, nameConst);
+        } else {
+            currentModulePublicMembers[toLower(declStmt->apiName)] = vm.environment->get(toLower(declStmt->apiName));
+        }
+    }
     void compileExpr(std::shared_ptr<Expr> expr, ObjFunction::CodeChunk &chunk) {
         if (auto lit = std::dynamic_pointer_cast<LiteralExpr>(expr)) {
             int constIndex = addConstant(chunk, lit->value);
@@ -1580,7 +1758,7 @@ private:
     }
 };
 
-// ============================================================================
+// ============================================================================  
 // Built-in Array Methods
 // ============================================================================
 Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string &method, const std::vector<Value>& args) {
@@ -1624,7 +1802,7 @@ Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string &method
     return Value(std::monostate{});
 }
 
-// ============================================================================
+// ============================================================================  
 // Virtual Machine Execution
 // ============================================================================
 Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
@@ -2284,15 +2462,21 @@ Value runVM(VM &vm, const ObjFunction::CodeChunk &chunk) {
     return Value(std::monostate{});
 }
 
-// ============================================================================
+// ============================================================================  
 // Main
 // ============================================================================
-int main() {
+int main(int argc, char* argv[]) {
     startTime = std::chrono::steady_clock::now();
 
-    std::ifstream file("test.txt");
+    // Determine source file based on command line arguments.
+    std::string filename = "test.txt";
+    if (argc >= 3 && std::string(argv[1]) == "--s") {
+        filename = argv[2];
+    }
+
+    std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Unable to open test.txt" << std::endl;
+        std::cerr << "Error: Unable to open " << filename << std::endl;
         return EXIT_FAILURE;
     }
     std::stringstream buffer;
