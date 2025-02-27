@@ -8,6 +8,8 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 
 ## Features ✨
 
+- **Cross-platform Plugin Support:** Compile and place plugins in a "libs" directory located beside the xojoscript executable. Plugins will automatically be found, loaded, and ready for use in your xojoscripts.
+- **Cross-platform Library Support:** Load system-level APIs using 'Declare' and use them as you would in Xojo.
 - **Function Support:** Compile and execute user-defined functions and built-in ones. Overloading of functions is permitted.
 - **Module Support:** Create XojoScript Modules. (● "extends" is in the works).
 - **Class & Instance Support:** Create classes, define methods, and instantiate objects.
