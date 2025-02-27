@@ -8,6 +8,8 @@ print(str(StartTime))
 print(StartTime.toString)
 print(starttime.toString)
 
+//overrides plugin function.
+//if plugin function exists - use plugin function when called over declared?
 Function factorial(n As Integer) As Integer
     If n <= 1 Then
         Return 1
@@ -157,7 +159,7 @@ Else
 End If
 End Function
 
-Dim n As Integer = 10  ' Change this value to generate more numbers 
+Dim n As Integer = 20  ' Change this value to generate more numbers 
 Print("Fibonacci Series up to " + Str(n) + " terms:")
 
 Dim fibSeries() As Integer 
@@ -180,16 +182,8 @@ goldenRatio = fibSeries(n-1) / fibSeries(n-2) Print("Golden Ratio approximation:
 End If
 
 
-Dim EndTime As Double = ticks
-print("Ticks: " + ticks.toString)
-EndTime = ticks / 60
-print("Run Time: " + str(EndTime) + " seconds")
-print("Run Time: " + str(microseconds / 1000000) + " seconds")
 
 Print("Done")
-'save()
-'load("./compiled.txt")
-
 
 Var theNumber As Integer
 Var digits As Integer
@@ -343,7 +337,7 @@ Module MyMod
   Var secret As String = "MySecret123"
 
   Public Function getRate() as Double
-    Print(secret)
+    Print(secret + " Inside Module getRate() method")
     Return GRate
   End Function
 
@@ -352,5 +346,55 @@ End Module
 print(str(getRate())) 'Using global name
 Print(str(MyMod.getRate())) 'Using namespace name
 print(str(PIN))
-Print(secret)
-Print(MyMod.secret)
+Print(secret + " using Module globally accessible method name")
+Print(MyMod.secret + " using Module namespace.methodname")
+
+var df as integer = 3
+
+Print("Select Case Test")
+select case df
+  case 1
+    Print(str(1))
+  case 2
+    Print(Str(2))
+  case 3
+    Print(str(3))
+End select
+
+select case bb
+  case true
+    Print("this was a " + str(true))
+  case false
+    Print("this was false")
+  case else
+    print("this was undecided")
+End select
+
+Enum foo    
+  enumvalue1 = 432    
+  enumvalue2 = 519    
+  enumvalue3 = 809    
+end    
+    
+Var x as integer = foo.enumvalue2    
+print(str(x))
+
+'plugin test
+print(sayhello("matt"))
+var xtv as integer = addtwonumbers(1.1735, 3.14159)
+print(str(xtv))
+
+print("UTF-8 Support")
+print("😊")
+
+Declare Sub MyAPI Lib "mylib.dll" (x as string, y as integer) 
+Declare Function MyFunc Lib "mylib.dll" () As Integer
+
+MyAPI("test", 4)
+print(str(MyFunc()))
+
+Dim EndTime As Double = ticks
+print("Ticks: " + ticks.toString)
+EndTime = ticks / 60
+print("Run Time: " + str(EndTime) + " seconds")
+print("Run Time: " + str(microseconds / 1000000) + " seconds")
