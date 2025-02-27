@@ -25,6 +25,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 
 - A C++ compiler with C++17 support (e.g. g++, clang++)
 - Git
+- libffi (https://github.com/libffi/libffi) - handles cross-platform plugin and system-level API access.
 
 ### Installation
 
