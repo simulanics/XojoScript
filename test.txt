@@ -130,7 +130,7 @@ tt.add("hello")
 tt.add(cc)
 tt.add(2216)
 print(str(tt.count()))
-for tx as integer = 0 to tt.lastrowindex()
+for tx as integer = 0 to tt.lastindex()
    print(tt(tx))
 next
 
@@ -398,3 +398,8 @@ print("Ticks: " + ticks.toString)
 EndTime = ticks / 60
 print("Run Time: " + str(EndTime) + " seconds")
 print("Run Time: " + str(microseconds / 1000000) + " seconds")
+
+
+var y as string
+y = urltomarkdown("https://www.xojo.com")
+print(y)
