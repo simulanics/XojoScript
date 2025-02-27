@@ -516,23 +516,38 @@ struct Environment {
 // ============================================================================  
 // Preprocessing: Remove line continuations and comments
 // ============================================================================
+// (now ignoring comment markers inside string literals)
+// ============================================================================
 std::string preprocessSource(const std::string& source) {
     std::istringstream iss(source);
     std::string line, result;
     while (std::getline(iss, line)) {
-        size_t pos = line.find_first_of("'");
-        size_t pos2 = line.find("//");
-        if (pos == std::string::npos || (pos2 != std::string::npos && pos2 < pos))
-            pos = pos2;
-        if (pos != std::string::npos)
-            line = line.substr(0, pos);
-        std::string trimmed = rtrim(line);
+        bool inString = false;
+        std::string newline;
+        for (size_t i = 0; i < line.size(); i++) {
+            char c = line[i];
+            // Toggle inString flag on unescaped double quotes.
+            if (c == '"' && (i == 0 || line[i-1] != '\\')) {
+                inString = !inString;
+            }
+            // If not inside a string literal, check for comment markers.
+            if (!inString) {
+                if (c == '/' && i + 1 < line.size() && line[i+1] == '/') {
+                    break; // strip from here to end of line
+                }
+                if (c == '\'') {
+                    break; // strip from here to end of line
+                }
+            }
+            newline.push_back(c);
+        }
+        // Process line continuations (underscore at end) as before.
+        std::string trimmed = rtrim(newline);
         if (!trimmed.empty() && trimmed.back() == '_') {
             size_t endPos = trimmed.find_last_not_of(" \t_");
             result += trimmed.substr(0, endPos + 1);
-        }
-        else {
-            result += line + "\n";
+        } else {
+            result += newline + "\n";
         }
     }
     return result;
