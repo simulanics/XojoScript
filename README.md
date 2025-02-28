@@ -32,7 +32,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/yourusername/XojoScript
+   git clone https://github.com/simulanics/XojoScript
    cd XojoScript
    ```
 2. Compile the Project:
