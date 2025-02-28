@@ -16,74 +16,55 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # ======================
-      # Linux: Download, Build, and Install libffi then compile
-      # ======================
-      - name: Setup and Build libffi on Linux
+      - name: Build on Linux
         if: runner.os == 'Linux'
         run: |
-          echo "Building libffi for architecture ${{ matrix.arch }}"
-          wget https://github.com/libffi/libffi/releases/download/v3.4.5/libffi-3.4.5.tar.gz
-          tar xzf libffi-3.4.5.tar.gz
-          cd libffi-3.4.5
-          ./configure --prefix=$HOME/libffi
-          make -j$(nproc)
-          make install
-          cd ..
-          echo "Compiling xojoscript with libffi"
+          echo "Building for architecture ${{ matrix.arch }}"
+          sudo apt-get update
+          sudo apt-get install -y libffi-dev
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            g++ -std=c++17 -I$HOME/libffi/include -L$HOME/libffi/lib -o xojoscript xojoscript.cpp -lffi
+            g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "x86" ]; then
-            sudo apt-get update
             sudo apt-get install -y g++-multilib
-            g++ -std=c++17 -m32 -I$HOME/libffi/include -L$HOME/libffi/lib -o xojoscript xojoscript.cpp -lffi
+            g++ -std=c++17 -m32 -o xojoscript xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo apt-get update
             sudo apt-get install -y aarch64-linux-gnu-g++
-            aarch64-linux-gnu-g++ -std=c++17 -I$HOME/libffi/include -L$HOME/libffi/lib -o xojoscript xojoscript.cpp -lffi
+            aarch64-linux-gnu-g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "armv7" ]; then
             sudo apt-get update
             sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            arm-linux-gnueabihf-g++ -std=c++17 -I$HOME/libffi/include -L$HOME/libffi/lib -o xojoscript xojoscript.cpp -lffi
+            arm-linux-gnueabihf-g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
           fi
 
-      # ======================
-      # macOS: Download, Build, and Install libffi then compile
-      # ======================
-      - name: Setup and Build libffi on macOS
+      - name: Build on macOS using Homebrew for libffi
         if: runner.os == 'macOS'
         run: |
-          echo "Building libffi for architecture ${{ matrix.arch }}"
-          curl -L -o libffi-3.4.5.tar.gz https://github.com/libffi/libffi/releases/download/v3.4.5/libffi-3.4.5.tar.gz
-          tar xzf libffi-3.4.5.tar.gz
-          cd libffi-3.4.5
-          ./configure --prefix=$HOME/libffi
-          make -j$(sysctl -n hw.ncpu)
-          make install
-          cd ..
-          echo "Compiling xojoscript with libffi"
+          echo "Installing libffi via Homebrew"
+          brew update
+          brew install libffi
+          LIBFFI_PREFIX=$(brew --prefix libffi)
+          echo "Using libffi from $LIBFFI_PREFIX"
+          echo "Building for architecture ${{ matrix.arch }}"
           if [ "${{ matrix.arch }}" = "x86_64" ] || [ "${{ matrix.arch }}" = "arm64" ]; then
-            clang++ -std=c++17 -arch ${{ matrix.arch }} -I$HOME/libffi/include -L$HOME/libffi/lib -o xojoscript xojoscript.cpp -lffi
+            clang++ -std=c++17 -arch ${{ matrix.arch }} -I$LIBFFI_PREFIX/include -L$LIBFFI_PREFIX/lib -o xojoscript xojoscript.cpp -lffi
           else
             echo "Skipping unsupported architecture ${{ matrix.arch }} on macOS"
           fi
 
-      # ======================
-      # Windows: Use MSYS2 to install libffi and build
-      # ======================
-      - name: Setup MSYS2
+      - name: Setup MSYS2 on Windows
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           update: true
           install: mingw-w64-x86_64-libffi
           msystem: MINGW64
+
       - name: Build on Windows
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           echo "Building for architecture ${{ matrix.arch }}"
-          # Assume only x86_64 and x86 are supported on Windows.
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             g++ -std=c++17 -o xojoscript.exe xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "x86" ]; then
