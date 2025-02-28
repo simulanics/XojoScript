@@ -68,7 +68,6 @@ End Sub
 
 ```
 ./xojoscript --s filename
-(*currently compiles test.txt file and immediately runs it in the VM if no source file is specified.)
 ```
 
 Debugging 🔍
