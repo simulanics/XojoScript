@@ -20,20 +20,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           echo "Building for architecture ${{ matrix.arch }}"
+          # Install libffi dev package on Linux
+          sudo apt-get update
+          sudo apt-get install -y libffi-dev
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            g++ -std=c++17 -o xojoscript xojoscript.cpp
+            g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "x86" ]; then
-            sudo apt-get update
             sudo apt-get install -y g++-multilib
-            g++ -std=c++17 -m32 -o xojoscript xojoscript.cpp
+            g++ -std=c++17 -m32 -o xojoscript xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "arm64" ]; then
-            sudo apt-get update
             sudo apt-get install -y aarch64-linux-gnu-g++
-            aarch64-linux-gnu-g++ -std=c++17 -o xojoscript xojoscript.cpp
+            aarch64-linux-gnu-g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
           elif [ "${{ matrix.arch }}" = "armv7" ]; then
-            sudo apt-get update
             sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            arm-linux-gnueabihf-g++ -std=c++17 -o xojoscript xojoscript.cpp
+            arm-linux-gnueabihf-g++ -std=c++17 -o xojoscript xojoscript.cpp -lffi
           fi
 
       - name: Build on Windows
@@ -42,9 +42,9 @@ jobs:
         run: |
           echo Building for architecture %ARCH%
           if "%ARCH%"=="x86_64" (
-            g++ -std=c++17 -o xojoscript.exe xojoscript.cpp
+            g++ -std=c++17 -o xojoscript.exe xojoscript.cpp -lffi
           ) else if "%ARCH%"=="x86" (
-            g++ -std=c++17 -m32 -o xojoscript.exe xojoscript.cpp
+            g++ -std=c++17 -m32 -o xojoscript.exe xojoscript.cpp -lffi
           ) else (
             echo Cross-compiling for %ARCH% is not supported on Windows
           )
@@ -55,8 +55,9 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           echo "Building for architecture ${{ matrix.arch }}"
+          # On macOS libffi is usually available; if needed, brew install libffi can be added.
           if [ "${{ matrix.arch }}" = "x86_64" ] || [ "${{ matrix.arch }}" = "arm64" ]; then
-            clang++ -std=c++17 -arch ${{ matrix.arch }} -o xojoscript xojoscript.cpp
+            clang++ -std=c++17 -arch ${{ matrix.arch }} -o xojoscript xojoscript.cpp -lffi
           else
             echo "Skipping unsupported architecture ${{ matrix.arch }} on macOS"
           fi
