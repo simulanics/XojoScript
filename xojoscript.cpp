@@ -26,7 +26,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  
 // SOFTWARE.
 // -----------------------------------------------------------------------------  
-// Build: g++ -I/include -L/lib -o xojoscript.exe xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto
+// Build: g++ -o xojoscript.exe xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto
 
 
 #include <iostream>
