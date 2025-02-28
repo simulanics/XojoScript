@@ -1,10 +1,33 @@
 // ============================================================================  
-// Xojoscript Bytecode Compiler and Virtual Machine  
+// XojoScript Bytecode Compiler and Virtual Machine  
 // Created by Matthew A Combatti  
 // Simulanics Technologies and Xojo Developers Studio  
 // https://www.simulanics.com  
 // https://www.xojostudio.org  
-// License: MIT
+// DISCLAIMER: Simulanics Technologies and Xojo Developers Studio are not affiliated with Xojo, Inc.
+// -----------------------------------------------------------------------------  
+// Copyright (c) 2025 Simulanics Technologies and Xojo Developers Studio  
+//  
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"), to deal  
+// in the Software without restriction, including without limitation the rights  
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell  
+// copies of the Software, and to permit persons to whom the Software is  
+// furnished to do so, subject to the following conditions:  
+//  
+// The above copyright notice and this permission notice shall be included in all  
+// copies or substantial portions of the Software.  
+//  
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR  
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,  
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE  
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER  
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  
+// SOFTWARE.
+// -----------------------------------------------------------------------------  
+// Build: g++ -I/include -L/lib -o xojoscript.exe xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto
+
 
 #include <iostream>
 #include <fstream>
@@ -26,10 +49,10 @@
 #include <cstring>
 
 #ifdef _WIN32
-  #include <windows.h>
+#include <windows.h>
 #else
-  #include <dlfcn.h>
-  #include <dirent.h>
+#include <dlfcn.h>
+#include <dirent.h>
 #endif
 
 #include <ffi.h>
@@ -191,7 +214,7 @@ enum class AccessModifier { PUBLIC, PRIVATE };
 // ============================================================================
 struct ObjFunction {
     std::string name;
-    int arity; // number of required parameters
+    int arity = 0; // Initialize arity to 0 for Windows MSCV // represents number of required parameters
     std::vector<Param> params; // full parameter list
     struct CodeChunk {
         std::vector<int> code;
@@ -516,7 +539,7 @@ struct Environment {
 // ============================================================================  
 // Preprocessing: Remove line continuations and comments
 // ============================================================================
-// (now ignoring comment markers inside string literals)
+// (now ignoring comment markers inside string literals) oops - my bad!
 // ============================================================================
 std::string preprocessSource(const std::string& source) {
     std::istringstream iss(source);
@@ -527,12 +550,12 @@ std::string preprocessSource(const std::string& source) {
         for (size_t i = 0; i < line.size(); i++) {
             char c = line[i];
             // Toggle inString flag on unescaped double quotes.
-            if (c == '"' && (i == 0 || line[i-1] != '\\')) {
+            if (c == '"' && (i == 0 || line[i - 1] != '\\')) {
                 inString = !inString;
             }
             // If not inside a string literal, check for comment markers.
             if (!inString) {
-                if (c == '/' && i + 1 < line.size() && line[i+1] == '/') {
+                if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
                     break; // strip from here to end of line
                 }
                 if (c == '\'') {
@@ -546,7 +569,8 @@ std::string preprocessSource(const std::string& source) {
         if (!trimmed.empty() && trimmed.back() == '_') {
             size_t endPos = trimmed.find_last_not_of(" \t_");
             result += trimmed.substr(0, endPos + 1);
-        } else {
+        }
+        else {
             result += newline + "\n";
         }
     }
@@ -1472,7 +1496,7 @@ private:
         consume(XTokenType::CASE, "Expect 'Case' after 'Select' in Select Case statement.");
         std::shared_ptr<Expr> switchExpr = expression();
         struct CaseClause {
-            bool isDefault;
+            bool isDefault = false; // Initialize to false for MSVC; Initialization not required for other platforms
             std::shared_ptr<Expr> expr;
             std::vector<std::shared_ptr<Stmt>> statements;
         };
@@ -1537,136 +1561,150 @@ int addConstantString(ObjFunction::CodeChunk& chunk, const std::string& s) {
 struct PluginEntry {
     const char* name;
     void* funcPtr;
-    int arity;
-    const char* paramTypes[10]; // supports up to 10 parameters
+    int arity = 0; //init
+    const char* paramTypes[10]; // supports up to 10 parameters - truly excessive - limit should never really be hit.
     const char* returnType;     // return type string
 };
 
 typedef PluginEntry* (*GetPluginEntriesFunc)(int*);
 
-ffi_type* mapType(const std::string &type) {
-    if(type=="string") return &ffi_type_pointer;
-    else if(type=="double") return &ffi_type_double;
-    else if(type=="integer") return &ffi_type_sint;
-    else if(type=="boolean") return &ffi_type_uint8;
-    else if(type=="color") return &ffi_type_uint32;
-    else if(type=="variant") return &ffi_type_pointer;
+ffi_type* mapType(const std::string& type) {
+    if (type == "string") return &ffi_type_pointer;
+    else if (type == "double") return &ffi_type_double;
+    else if (type == "integer") return &ffi_type_sint;
+    else if (type == "boolean") return &ffi_type_uint8;
+    else if (type == "color") return &ffi_type_uint32;
+    else if (type == "variant") return &ffi_type_pointer;
     else return nullptr;
 }
 
 BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, const char* returnTypeStr) {
     ffi_cif* cif = new ffi_cif;
-    ffi_type** argTypes = new ffi_type*[arity];
+    ffi_type** argTypes = new ffi_type * [arity];
     for (int i = 0; i < arity; i++) {
-         std::string t = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
-         ffi_type* ft = mapType(t);
-         if (!ft) {
-             std::cerr << "Unknown plugin parameter type: " << t << std::endl;
-             exit(1);
-         }
-         argTypes[i] = ft;
+        std::string t = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
+        ffi_type* ft = mapType(t);
+        if (!ft) {
+            std::cerr << "Unknown plugin parameter type: " << t << std::endl;
+            exit(1);
+        }
+        argTypes[i] = ft;
     }
     std::string retTypeString = toLower(std::string(returnTypeStr ? returnTypeStr : "variant"));
     ffi_type* retType = mapType(retTypeString);
     if (!retType) {
-         std::cerr << "Unknown plugin return type: " << retTypeString << std::endl;
-         exit(1);
+        std::cerr << "Unknown plugin return type: " << retTypeString << std::endl;
+        exit(1);
     }
     if (ffi_prep_cif(cif, FFI_DEFAULT_ABI, arity, retType, argTypes) != FFI_OK) {
-         std::cerr << "ffi_prep_cif failed for plugin function." << std::endl;
-         exit(1);
+        std::cerr << "ffi_prep_cif failed for plugin function." << std::endl;
+        exit(1);
     }
     return [funcPtr, cif, arity, argTypes, paramTypes, retType, retTypeString](const std::vector<Value>& args) -> Value {
-         if ((int)args.size() != arity)
-              runtimeError("Plugin function expects " + std::to_string(arity) + " arguments.");
-         void** argValues = new void*[arity];
-         int intStorage[10] = {0};
-         double doubleStorage[10] = {0.0};
-         bool boolStorage[10] = {false};
-         const char* stringStorage[10] = {nullptr};
-         unsigned int uintStorage[10] = {0};
-         Value* variantStorage[10] = {nullptr};
-         for (int i = 0; i < arity; i++) {
-             std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
-             if (pType == "string") {
-                 if (!holds<std::string>(args[i])) runtimeError("Plugin expects a string argument.");
-                 std::string s = getVal<std::string>(args[i]);
-                 stringStorage[i] = strdup(s.c_str());
-                 argValues[i] = &stringStorage[i];
-             } else if (pType == "double") {
-                 if (holds<double>(args[i]))
-                     doubleStorage[i] = getVal<double>(args[i]);
-                 else if (holds<int>(args[i]))
-                     doubleStorage[i] = static_cast<double>(getVal<int>(args[i]));
-                 else
-                     runtimeError("Plugin expects a double argument.");
-                 argValues[i] = &doubleStorage[i];
-             } else if (pType == "integer") {
-                 if (!holds<int>(args[i])) runtimeError("Plugin expects an integer argument.");
-                 intStorage[i] = getVal<int>(args[i]);
-                 argValues[i] = &intStorage[i];
-             } else if (pType == "boolean") {
-                 if (!holds<bool>(args[i])) runtimeError("Plugin expects a boolean argument.");
-                 boolStorage[i] = getVal<bool>(args[i]);
-                 argValues[i] = &boolStorage[i];
-             } else if (pType == "color") {
-                 if (!holds<Color>(args[i])) runtimeError("Plugin expects a color argument.");
-                 uintStorage[i] = getVal<Color>(args[i]).value;
-                 argValues[i] = &uintStorage[i];
-             } else if (pType == "variant") {
-                 variantStorage[i] = new Value(args[i]);
-                 argValues[i] = &variantStorage[i];
-             } else {
-                 runtimeError("Unsupported plugin parameter type: " + pType);
-             }
-         }
-         union {
-             int i;
-             double d;
-             bool b;
-             const char* s;
-             unsigned int ui;
-             Value* variant;
-         } resultStorage;
-         ffi_call(cif, FFI_FN(funcPtr), &resultStorage, argValues);
-         for (int i = 0; i < arity; i++) {
-             std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
-             if (pType == "string") {
-                 free((void*)stringStorage[i]);
-             } else if (pType == "variant") {
-                 delete variantStorage[i];
-             }
-         }
-         delete[] argValues;
-         if (retTypeString == "string") {
-             return Value(std::string(resultStorage.s ? resultStorage.s : ""));
-         } else if (retTypeString == "double") {
-             return Value(resultStorage.d);
-         } else if (retTypeString == "integer") {
-             return Value(resultStorage.i);
-         } else if (retTypeString == "boolean") {
-             return Value(resultStorage.b);
-         } else if (retTypeString == "color") {
-             return Value(Color{ resultStorage.ui });
-         } else if (retTypeString == "variant") {
-             if (resultStorage.variant) {
-                 Value retVal = *(resultStorage.variant);
-                 delete resultStorage.variant;
-                 return retVal;
-             } else {
-                 return Value(std::monostate{});
-             }
-         } else {
-             runtimeError("Unsupported plugin return type: " + retTypeString);
-         }
-         return Value(std::monostate{});
-    };
+        if ((int)args.size() != arity)
+            runtimeError("Plugin function expects " + std::to_string(arity) + " arguments.");
+        void** argValues = new void* [arity];
+        int intStorage[10] = { 0 };
+        double doubleStorage[10] = { 0.0 };
+        bool boolStorage[10] = { false };
+        const char* stringStorage[10] = { nullptr };
+        unsigned int uintStorage[10] = { 0 };
+        Value* variantStorage[10] = { nullptr };
+        for (int i = 0; i < arity; i++) {
+            std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
+            if (pType == "string") {
+                if (!holds<std::string>(args[i])) runtimeError("Plugin expects a string argument.");
+                std::string s = getVal<std::string>(args[i]);
+                stringStorage[i] = strdup(s.c_str());
+                argValues[i] = &stringStorage[i];
+            }
+            else if (pType == "double") {
+                if (holds<double>(args[i]))
+                    doubleStorage[i] = getVal<double>(args[i]);
+                else if (holds<int>(args[i]))
+                    doubleStorage[i] = static_cast<double>(getVal<int>(args[i]));
+                else
+                    runtimeError("Plugin expects a double argument.");
+                argValues[i] = &doubleStorage[i];
+            }
+            else if (pType == "integer") {
+                if (!holds<int>(args[i])) runtimeError("Plugin expects an integer argument.");
+                intStorage[i] = getVal<int>(args[i]);
+                argValues[i] = &intStorage[i];
+            }
+            else if (pType == "boolean") {
+                if (!holds<bool>(args[i])) runtimeError("Plugin expects a boolean argument.");
+                boolStorage[i] = getVal<bool>(args[i]);
+                argValues[i] = &boolStorage[i];
+            }
+            else if (pType == "color") {
+                if (!holds<Color>(args[i])) runtimeError("Plugin expects a color argument.");
+                uintStorage[i] = getVal<Color>(args[i]).value;
+                argValues[i] = &uintStorage[i];
+            }
+            else if (pType == "variant") {
+                variantStorage[i] = new Value(args[i]);
+                argValues[i] = &variantStorage[i];
+            }
+            else {
+                runtimeError("Unsupported plugin parameter type: " + pType);
+            }
+        }
+        union {
+            int i;
+            double d;
+            bool b;
+            const char* s;
+            unsigned int ui;
+            Value* variant;
+        } resultStorage;
+        ffi_call(cif, FFI_FN(funcPtr), &resultStorage, argValues);
+        for (int i = 0; i < arity; i++) {
+            std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
+            if (pType == "string") {
+                free((void*)stringStorage[i]);
+            }
+            else if (pType == "variant") {
+                delete variantStorage[i];
+            }
+        }
+        delete[] argValues;
+        if (retTypeString == "string") {
+            return Value(std::string(resultStorage.s ? resultStorage.s : ""));
+        }
+        else if (retTypeString == "double") {
+            return Value(resultStorage.d);
+        }
+        else if (retTypeString == "integer") {
+            return Value(resultStorage.i);
+        }
+        else if (retTypeString == "boolean") {
+            return Value(resultStorage.b);
+        }
+        else if (retTypeString == "color") {
+            return Value(Color{ resultStorage.ui });
+        }
+        else if (retTypeString == "variant") {
+            if (resultStorage.variant) {
+                Value retVal = *(resultStorage.variant);
+                delete resultStorage.variant;
+                return retVal;
+            }
+            else {
+                return Value(std::monostate{});
+            }
+        }
+        else {
+            runtimeError("Unsupported plugin return type: " + retTypeString);
+        }
+        return Value(std::monostate{});
+        };
 }
 
 // In our system, we create a helper for Declare statements that loads the plugin library
 // and wraps the exported function using libffi.
 BuiltinFn wrapPluginFunctionForDeclare(const std::vector<Param>& params, const std::string& retType,
-                                         const std::string& apiName, const std::string& libName) {
+    const std::string& apiName, const std::string& libName) {
     void* libHandle = nullptr;
 #ifdef _WIN32
     libHandle = LoadLibraryA(libName.c_str());
@@ -1674,7 +1712,9 @@ BuiltinFn wrapPluginFunctionForDeclare(const std::vector<Param>& params, const s
         std::cerr << "Error loading library: " << libName << std::endl;
         exit(1);
     }
-    void* funcPtr = GetProcAddress((HMODULE)libHandle, apiName.c_str());
+    //void* funcPtr = GetProcAddress((HMODULE)libHandle, apiName.c_str());
+	void* funcPtr = reinterpret_cast<void*>(GetProcAddress((HMODULE)libHandle, apiName.c_str()));
+
 #else
     libHandle = dlopen(libName.c_str(), RTLD_LAZY);
     if (!libHandle) {
@@ -1687,7 +1727,7 @@ BuiltinFn wrapPluginFunctionForDeclare(const std::vector<Param>& params, const s
         std::cerr << "Error finding symbol: " << apiName << " in library: " << libName << std::endl;
         exit(1);
     }
-    const char* pTypes[10] = {nullptr};
+    const char* pTypes[10] = { nullptr };
     int arity = params.size();
     for (int i = 0; i < arity; i++) {
         pTypes[i] = params[i].type.c_str();
@@ -1743,43 +1783,43 @@ void loadPlugins(VM& vm) {
         FindClose(hFind);
     }
 #else
-    DIR *dir = opendir(libsDir.c_str());
+    DIR* dir = opendir(libsDir.c_str());
     if (!dir) {
-         std::cout << "Failed to open libs directory: " << libsDir << std::endl;
-         return;
+        std::cout << "Failed to open libs directory: " << libsDir << std::endl;
+        return;
     }
-    struct dirent *entry;
+    struct dirent* entry;
     while ((entry = readdir(dir)) != nullptr) {
-         std::string filename = entry->d_name;
+        std::string filename = entry->d_name;
 #ifdef __APPLE__
-         if (filename.size() >= 6 && filename.substr(filename.size()-6) == ".dylib")
+        if (filename.size() >= 6 && filename.substr(filename.size() - 6) == ".dylib")
 #else
-         if (filename.size() >= 3 && filename.substr(filename.size()-3) == ".so")
+        if (filename.size() >= 3 && filename.substr(filename.size() - 3) == ".so")
 #endif
-         {
-             std::string fullPath = libsDir + filename;
-             void* libHandle = dlopen(fullPath.c_str(), RTLD_LAZY);
-             if (libHandle) {
-                 GetPluginEntriesFunc getEntries = (GetPluginEntriesFunc)dlsym(libHandle, "GetPluginEntries");
-                 if (getEntries) {
-                     int count = 0;
-                     PluginEntry* entries = getEntries(&count);
-                     for (int i = 0; i < count; i++) {
-                         PluginEntry& entry = entries[i];
-                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
-                         std::string funcName = toLower(std::string(entry.name));
-                         vm.environment->define(funcName, fn);
-                         std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << fullPath << std::endl;
-                     }
-                 }
-                 else {
-                     std::cout << "Library " << fullPath << " does not export GetPluginEntries." << std::endl;
-                 }
-             }
-             else {
-                 std::cout << "Failed to load library: " << fullPath << std::endl;
-             }
-         }
+        {
+            std::string fullPath = libsDir + filename;
+            void* libHandle = dlopen(fullPath.c_str(), RTLD_LAZY);
+            if (libHandle) {
+                GetPluginEntriesFunc getEntries = (GetPluginEntriesFunc)dlsym(libHandle, "GetPluginEntries");
+                if (getEntries) {
+                    int count = 0;
+                    PluginEntry* entries = getEntries(&count);
+                    for (int i = 0; i < count; i++) {
+                        PluginEntry& entry = entries[i];
+                        BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
+                        std::string funcName = toLower(std::string(entry.name));
+                        vm.environment->define(funcName, fn);
+                        std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << fullPath << std::endl;
+                    }
+                }
+                else {
+                    std::cout << "Library " << fullPath << " does not export GetPluginEntries." << std::endl;
+                }
+            }
+            else {
+                std::cout << "Failed to load library: " << fullPath << std::endl;
+            }
+        }
     }
     closedir(dir);
 #endif
@@ -2791,7 +2831,8 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                 std::string key = toLower(propName);
                 if (en->members.find(key) != en->members.end()) {
                     vm.stack.push_back(en->members[key]);
-                } else {
+                }
+                else {
                     runtimeError("VM: Undefined enum member: " + propName);
                 }
             }
@@ -2892,14 +2933,14 @@ int main(int argc, char* argv[]) {
     vm.environment = vm.globals;
     // Define built-in functions as actual functions rather than strings.
     vm.environment->define("print", BuiltinFn([](const std::vector<Value>& args) -> Value {
-        if(args.size() < 1) runtimeError("print expects an argument.");
+        if (args.size() < 1) runtimeError("print expects an argument.");
         std::cout << valueToString(args[0]) << std::endl;
         return args[0];
-    }));
+        }));
     vm.environment->define("str", BuiltinFn([](const std::vector<Value>& args) -> Value {
-        if(args.size() < 1) runtimeError("str expects an argument.");
+        if (args.size() < 1) runtimeError("str expects an argument.");
         return Value(valueToString(args[0]));
-    }));
+        }));
     // The following built-ins remain defined as in the original code.
     vm.environment->define("microseconds", std::string("microseconds"));
     vm.environment->define("ticks", std::string("ticks"));
@@ -2909,12 +2950,12 @@ int main(int argc, char* argv[]) {
             runtimeError("val expects a string argument.");
         double d = std::stod(getVal<std::string>(args[0]));
         return d;
-    }));
+        }));
     vm.environment->define("array", BuiltinFn([](const std::vector<Value>& args) -> Value {
         auto arr = std::make_shared<ObjArray>();
         arr->elements = args;
         return Value(arr);
-    }));
+        }));
     vm.environment->define("abs", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Abs expects exactly one argument.");
         if (holds<int>(args[0]))
@@ -2924,12 +2965,12 @@ int main(int argc, char* argv[]) {
         else
             runtimeError("Abs expects a number.");
         return Value(std::monostate{});
-    }));
+        }));
     vm.environment->define("acos", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Acos expects exactly one argument.");
         double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Acos expects a number."), 0.0));
         return std::acos(x);
-    }));
+        }));
     vm.environment->define("asc", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Asc expects exactly one argument.");
         if (!holds<std::string>(args[0]))
@@ -2937,48 +2978,48 @@ int main(int argc, char* argv[]) {
         std::string s = getVal<std::string>(args[0]);
         if (s.empty()) runtimeError("Asc expects a non-empty string.");
         return (int)s[0];
-    }));
+        }));
     vm.environment->define("asin", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Asin expects exactly one argument.");
         double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Asin expects a number."), 0.0));
         return std::asin(x);
-    }));
+        }));
     vm.environment->define("atan", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Atan expects exactly one argument.");
         double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan expects a number."), 0.0));
         return std::atan(x);
-    }));
+        }));
     vm.environment->define("atan2", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Atan2 expects exactly two arguments.");
         double y = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan2 expects numbers."), 0.0));
         double x = holds<int>(args[1]) ? getVal<int>(args[1]) : (holds<double>(args[1]) ? getVal<double>(args[1]) : (runtimeError("Atan2 expects numbers."), 0.0));
         return std::atan2(y, x);
-    }));
+        }));
     vm.environment->define("ceiling", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Ceiling expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Ceiling expects a number."), 0.0));
         return std::ceil(v);
-    }));
+        }));
     vm.environment->define("cos", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Cos expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Cos expects a number."), 0.0));
         return std::cos(v);
-    }));
+        }));
     vm.environment->define("exp", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Exp expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Exp expects a number."), 0.0));
         return std::exp(v);
-    }));
+        }));
     vm.environment->define("floor", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Floor expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Floor expects a number."), 0.0));
         return std::floor(v);
-    }));
+        }));
     vm.environment->define("log", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Log expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Log expects a number."), 0.0));
         return std::log(v);
-    }));
+        }));
     vm.environment->define("max", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Max expects exactly two arguments.");
         if (holds<int>(args[0]) && holds<int>(args[1])) {
@@ -2990,7 +3031,7 @@ int main(int argc, char* argv[]) {
             double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
             return a > b ? a : b;
         }
-    }));
+        }));
     vm.environment->define("min", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Min expects exactly two arguments.");
         if (holds<int>(args[0]) && holds<int>(args[1])) {
@@ -3002,7 +3043,7 @@ int main(int argc, char* argv[]) {
             double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
             return a < b ? a : b;
         }
-    }));
+        }));
     vm.environment->define("oct", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Oct expects exactly one argument.");
         int n = 0;
@@ -3012,45 +3053,45 @@ int main(int argc, char* argv[]) {
         std::stringstream ss;
         ss << std::oct << n;
         return ss.str();
-    }));
+        }));
     vm.environment->define("pow", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Pow expects exactly two arguments.");
         double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
         return std::pow(a, b);
-    }));
+        }));
     vm.environment->define("round", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Round expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::round(v);
-    }));
+        }));
     vm.environment->define("sign", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Sign expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         if (v < 0) return -1;
         else if (v == 0) return 0;
         else return 1;
-    }));
+        }));
     vm.environment->define("sin", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Sin expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::sin(v);
-    }));
+        }));
     vm.environment->define("sqrt", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Sqrt expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::sqrt(v);
-    }));
+        }));
     vm.environment->define("tan", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Tan expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::tan(v);
-    }));
+        }));
     vm.environment->define("rnd", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 0) runtimeError("Rnd expects no arguments.");
         std::uniform_real_distribution<double> dist(0.0, 1.0);
         return dist(global_rng);
-    }));
+        }));
     {
         auto randomClass = std::make_shared<ObjClass>();
         randomClass->name = "random";
@@ -3072,7 +3113,7 @@ int main(int argc, char* argv[]) {
             if (minVal > maxVal) runtimeError("Random.InRange: min is greater than max.");
             std::uniform_int_distribution<int> dist(minVal, maxVal);
             return dist(global_rng);
-        });
+            });
         vm.environment->define("random", randomClass);
     }
 
@@ -3086,7 +3127,7 @@ int main(int argc, char* argv[]) {
 
     if (vm.environment->values.find("main") != vm.environment->values.end() &&
         (holds<std::shared_ptr<ObjFunction>>(vm.environment->get("main")) ||
-         holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
+            holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
         Value mainVal = vm.environment->get("main");
         if (holds<std::shared_ptr<ObjFunction>>(mainVal)) {
             auto mainFunction = getVal<std::shared_ptr<ObjFunction>>(mainVal);
