@@ -89,10 +89,9 @@ License 📄
 
 This project is licensed under the MIT License. See the LICENSE file for details.
 
-**This is currently a working proof-of-concept to be expanded upon.
 ---
 
-Happy coding! 😄
+🤗 Happy Coding! 😄
 
 
 
