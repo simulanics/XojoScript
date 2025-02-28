@@ -8,8 +8,7 @@ print(str(StartTime))
 print(StartTime.toString)
 print(starttime.toString)
 
-//overrides plugin function.
-//if plugin function exists - use plugin function when called over declared?
+
 Function factorial(n As Integer) As Integer
     If n <= 1 Then
         Return 1
