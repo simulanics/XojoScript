@@ -90,7 +90,7 @@ Debug trace and profile logging is enabled via the DEBUG_MODE "--d true/false" c
 ./xojoscript --s filename --d true > debugtrace.log
 ```
 
-`It is recommended to write debugtrace profiling to a file for analysis, as even simple program trace profiles may be many hundred megabytes as each logical step and potential errors or warnings are recorded.`
+`For optimal analysis, it is advisable to save debug trace profiles to a file, as even basic program traces can reach hundreds of megabytes due to the detailed logging of each logical step, along with any potential errors or warnings.`
 
 This will output detailed logs for lexing, parsing, compiling, and execution.
 
