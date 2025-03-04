@@ -36,7 +36,6 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
    git clone https://github.com/simulanics/XojoScript
    cd XojoScript
    ```
-2. Compile the Project:
 
 
 **Automated Building**
@@ -45,6 +44,8 @@ Use the included `build_xojoscript.bat` / `./build_xojoscript.sh` and `build_plu
 
 
 **Manual Building**
+
+2. Compile the Project:
 
 For example, using g++:
 
