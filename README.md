@@ -38,6 +38,14 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
    ```
 2. Compile the Project:
 
+
+**Automated Building**
+
+Use the included `build_xojoscript.bat` / `./build_xojoscript.sh` and `build_plugins.bat` / `./build_plugins.sh` scripts to automatically build and compile a release version for testing. Debugging is always available using the debug trace and profiling commandline flag (see below).
+
+
+**Manual Building**
+
 For example, using g++:
 
 ```
