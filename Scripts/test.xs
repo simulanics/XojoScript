@@ -9,13 +9,14 @@ print(StartTime.toString)
 print(starttime.toString)
 
 
-Function factorial(n As Integer) As Integer
-    If n <= 1 Then
-        Return 1
-    Else
-        Return n * factorial(n - 1)
-    End If
-End Function
+//Implementation not using plugin. Uncomment to override plugin if present.
+'Function factorial(n As Integer) As Integer
+'    If n <= 1 Then
+'        Return 1
+'    Else
+'        Return n * factorial(n - 1)
+'    End If
+'End Function
 
 Dim f As Integer = factorial(6)
 print("Factorial of 6 is " + str(f))
@@ -145,17 +146,15 @@ print(str(val("216.14")))
 
 
 ' Fibonacci Series Demo in XojoScript
-
+//Implementation not using plugin. Uncomment to override plugin if present.
 Function Fibonacci(n2 As Integer) As Integer 
-'print("N2 val: " + str(n2))
-
-If n2 <= 0 Then 
-  Return 0 
-ElseIf n2 = 1 Then 
-  Return 1 
-Else
-  Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
-End If
+	If n2 <= 0 Then 
+		Return 0 
+	ElseIf n2 = 1 Then 
+		Return 1 
+	Else
+		Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
+	End If
 End Function
 
 Dim n As Integer = 20  ' Change this value to generate more numbers 
@@ -177,7 +176,7 @@ Next
 ' Calculate Golden Ratio 
 Dim goldenRatio As Double 
 If n > 1 Then 
-goldenRatio = fibSeries(n-1) / fibSeries(n-2) Print("Golden Ratio approximation: " + Str(goldenRatio)) 
+	goldenRatio = fibSeries(n-1) / fibSeries(n-2) Print("Golden Ratio approximation: " + Str(goldenRatio)) 
 End If
 
 
@@ -386,11 +385,10 @@ print(str(xtv))
 print("UTF-8 Support")
 print("😊")
 
-Declare Sub MyAPI Lib "mylib.dll" (x as string, y as integer) 
-Declare Function MyFunc Lib "mylib.dll" () As Integer
-
-MyAPI("test", 4)
-print(str(MyFunc()))
+'Declare Sub MyAPI Lib "mylib.dll" (x as string, y as integer) 
+'Declare Function MyFunc Lib "mylib.dll" () As Integer
+'MyAPI("test", 4)
+'print(str(MyFunc()))
 
 Dim EndTime As Double = ticks
 print("Ticks: " + ticks.toString)
@@ -399,6 +397,15 @@ print("Run Time: " + str(EndTime) + " seconds")
 print("Run Time: " + str(microseconds / 1000000) + " seconds")
 
 
+   var md as String = "<h1>Hello</h1>:" + chr(13) + "<ul><li>HTML to Markdown - yay!</li>" + chr(13) + _
+      "<li>Testing one </li>" + chr(13) +_
+      "<li>Testing two </li>" + chr(13) +_
+      "<li>Testing three</li></ul>"
+   
+   print( HTMLtoMarkdown(md) )
+
+var url as string = "https://www.simulanics.com"
+Print("Loading HTML from " + URL + " for translation to Markdown")
 var y as string
-y = urltomarkdown("https://www.xojo.com")
+y = URLtoMarkdown(url)
 print(y)

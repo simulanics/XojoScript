@@ -1,6 +1,6 @@
 // TimeDatePlugin.cpp
 // Build: g++ -shared -o TimeDatePlugin.dll TimeDatePlugin.cpp (Windows)
-//        g++ -shared -fPIC -o TimeDatePlugin.so TimeDatePlugin.cpp (Linux/macOS)
+//        g++ -shared -fPIC -o TimeDatePlugin.dylib/so TimeDatePlugin.cpp (MacOS/Linux)
 
 #include <ctime>
 #include <string>

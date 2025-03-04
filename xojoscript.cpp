@@ -1571,10 +1571,16 @@ typedef PluginEntry* (*GetPluginEntriesFunc)(int*);
 ffi_type* mapType(const std::string& type) {
     if (type == "string") return &ffi_type_pointer;
     else if (type == "double") return &ffi_type_double;
+	else if (type == "number") return &ffi_type_double;
+	else if (type == "void") return &ffi_type_pointer;
     else if (type == "integer") return &ffi_type_sint;
+    else if (type == "int") return &ffi_type_sint;
     else if (type == "boolean") return &ffi_type_uint8;
+	else if (type == "bool") return &ffi_type_uint8;
     else if (type == "color") return &ffi_type_uint32;
     else if (type == "variant") return &ffi_type_pointer;
+    else if (type == "pointer") return &ffi_type_pointer;
+	else if (type == "ptr") return &ffi_type_pointer;
     else return nullptr;
 }
 
@@ -1709,7 +1715,8 @@ BuiltinFn wrapPluginFunctionForDeclare(const std::vector<Param>& params, const s
 #ifdef _WIN32
     libHandle = LoadLibraryA(libName.c_str());
     if (!libHandle) {
-        std::cerr << "Error loading library: " << libName << std::endl;
+        //std::cerr << "Error loading library: " << libName << std::endl;
+		debugLog("Error loading library: " + libName);
         exit(1);
     }
     //void* funcPtr = GetProcAddress((HMODULE)libHandle, apiName.c_str());
@@ -1769,15 +1776,19 @@ void loadPlugins(VM& vm) {
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
-                        std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << dllPath << std::endl;
+                        //std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << dllPath << std::endl;
+						debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + dllPath);
+
                     }
                 }
                 else {
-                    std::cout << "DLL " << dllPath << " does not export GetPluginEntries." << std::endl;
+                    //std::cout << "DLL " << dllPath << " does not export GetPluginEntries." << std::endl;
+					debugLog("DLL " + dllPath + " does not export GetPluginEntries.");
                 }
             }
             else {
-                std::cout << "Failed to load DLL: " << dllPath << std::endl;
+                //std::cout << "Failed to load DLL: " << dllPath << std::endl;
+				debugLog("Failed to load DLL: " + dllPath);
             }
         } while (FindNextFileA(hFind, &findData));
         FindClose(hFind);
@@ -1785,7 +1796,8 @@ void loadPlugins(VM& vm) {
 #else
     DIR* dir = opendir(libsDir.c_str());
     if (!dir) {
-        std::cout << "Failed to open libs directory: " << libsDir << std::endl;
+        //std::cout << "Failed to open libs directory: " << libsDir << std::endl;
+		debugLog("Failed to open libs directory: " + libsDir);
         return;
     }
     struct dirent* entry;
@@ -1809,15 +1821,18 @@ void loadPlugins(VM& vm) {
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
-                        std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << fullPath << std::endl;
+                        //std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << fullPath << std::endl;
+						debugLog("Loaded plugin function: " + entry.name + " with arity " + entry.arity + " from " + fullPath);
                     }
                 }
                 else {
-                    std::cout << "Library " << fullPath << " does not export GetPluginEntries." << std::endl;
+                    //std::cout << "Library " << fullPath << " does not export GetPluginEntries." << std::endl;
+					debugLog("Library " + fullPath + " does not export GetPluginEntries.");
                 }
             }
             else {
-                std::cout << "Failed to load library: " << fullPath << std::endl;
+                //std::cout << "Failed to load library: " << fullPath << std::endl;
+				debugLog("Failed to load library: " + fullPath);
             }
         }
     }
@@ -2905,33 +2920,47 @@ int main(int argc, char* argv[]) {
     startTime = std::chrono::steady_clock::now();
 
     std::string filename = "test.txt";
-    if (argc >= 3 && std::string(argv[1]) == "--s") {
-        filename = argv[2];
+    
+	// Iterate through arguments, skipping argv[0] (program name)
+    for (int i = 1; i < argc - 1; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "--s" && (i + 1 < argc)) {
+            filename = argv[i + 1];
+        } 
+        else if (arg == "--d" && (i + 1 < argc)) {
+            std::string debugArg = argv[i + 1];
+
+            // Convert to lowercase for case-insensitive comparison
+            std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
+
+            if (debugArg == "true") {
+                DEBUG_MODE = true;
+            } else if (debugArg == "false") {
+                DEBUG_MODE = false;
+            } else {
+                std::cerr << "Error: Argument for --d must be 'true' or 'false' (case insensitive).\n";
+                return 1;
+            }
+        }
     }
 
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open " << filename << std::endl;
-        return EXIT_FAILURE;
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string source = preprocessSource(buffer.str());
+    // Print DEBUG_MODE status for verification
+    debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF")); //Should only ever show ON since OFF should display no debug info.
+	//std::cout << "DEBUG_MODE: " << (DEBUG_MODE ? "ON" : "OFF") << std::endl;
 
-    debugLog("Starting lexing...");
-    Lexer lexer(source);
-    auto tokens = lexer.scanTokens();
-    debugLog("Lexing complete. Tokens count: " + std::to_string(tokens.size()));
-
-    debugLog("Starting parsing...");
-    Parser parser(tokens);
-    std::vector<std::shared_ptr<Stmt>> statements = parser.parse();
-    debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
+////////////////////////Drop-in//////////////////////////////////
 
     VM vm;
     vm.globals = std::make_shared<Environment>(nullptr);
     vm.environment = vm.globals;
-    // Define built-in functions as actual functions rather than strings.
+
+    // Define built-in constants.
+    vm.environment->define("pi", Value(3.141592653589793));
+
+
+
+    // Define built-in functions.
     vm.environment->define("print", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() < 1) runtimeError("print expects an argument.");
         std::cout << valueToString(args[0]) << std::endl;
@@ -3118,6 +3147,27 @@ int main(int argc, char* argv[]) {
     }
 
     loadPlugins(vm);
+	
+	////////////////////////////////////////////////
+	std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open " << filename << std::endl;
+        return EXIT_FAILURE;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string source = preprocessSource(buffer.str());
+
+    debugLog("Starting lexing...");
+    Lexer lexer(source);
+    auto tokens = lexer.scanTokens();
+    debugLog("Lexing complete. Tokens count: " + std::to_string(tokens.size()));
+
+    debugLog("Starting parsing...");
+    Parser parser(tokens);
+    std::vector<std::shared_ptr<Stmt>> statements = parser.parse();
+    debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
+///////////////////////////////////////
 
     debugLog("Starting compilation...");
     Compiler compiler(vm);

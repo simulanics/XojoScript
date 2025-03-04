@@ -10,5 +10,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Ensure the release directory exists
+mkdir -p release
+
+# Move the compiled executable to the release directory
+mv -f xojoscript release/
+
 echo "XojoScript Built Successfully."
 exit 0

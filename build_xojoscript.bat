@@ -18,5 +18,11 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b %ERRORLEVEL%
 )
 
+:: Ensure the release directory exists
+if not exist release mkdir release
+
+:: Move the compiled executable to the release directory
+move /Y xojoscript.exe release\
+
 echo XojoScript Built Successfully.
 exit /b 0

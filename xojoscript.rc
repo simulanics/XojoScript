@@ -9,9 +9,9 @@ BEGIN
         BLOCK "040904B0" // Language (English-US) and Codepage (Unicode)
         BEGIN
             VALUE "CompanyName", "Simulanics Technologies"
-            VALUE "FileDescription", "XojoScript Compiler and VM"
+            VALUE "FileDescription", "Open Source XojoScript Compiler and VM"
             VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "XojoScript"
+            VALUE "InternalName", "Open Source XojoScript"
             VALUE "LegalCopyright", "© 2025 Simulanics Technologies"
             VALUE "OriginalFilename", "xojoscript.exe"
             VALUE "ProductName", "XojoScript"

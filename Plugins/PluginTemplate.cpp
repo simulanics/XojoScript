@@ -25,7 +25,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  
 // SOFTWARE.
 // ----------------------------------------------------------------------------- 
-// Build: g++ -shared -fPIC -o libPluginTemplate.dll PluginTemplate.cpp
+// Build (Windows): g++ -shared -fPIC -o PluginTemplate.dll PluginTemplate.cpp 
+// Build (macOS/Linux): g++ -shared -fPIC -o PluginTemplate.dylib/so PluginTemplate.cpp
 
 #include <cstdio>
 #include <string>
@@ -104,15 +105,33 @@ extern "C" {
     #endif
         return true;
     }
+	
+	// **DoEvents() Function** - Allows UI events to be processed
+    XPLUGIN_API void DoEvents() {
+    #ifdef _WIN32
+        // Process pending UI messages
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+        // Allow Windows to handle UI input
+        MsgWaitForMultipleObjectsEx(0, nullptr, 0, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    #else
+        // Yield CPU to allow other tasks to run
+        sched_yield();
+    #endif
+    }
 
     // Static array of plugin method entries; add more entries as needed.
     static PluginEntry pluginEntries[] = {
-        { "addtwonumbers", (void*)addtwonumbers, 2, {"double", "double"}, "double" },
-        { "sayhello", (void*)sayhello, 1, {"string"}, "string" },
-        { "factorial", (void*)factorial, 1, {"integer"}, "integer" },
+        { "AddTwoNumbers", (void*)addtwonumbers, 2, {"double", "double"}, "double" },
+        { "SayHello", (void*)sayhello, 1, {"string"}, "string" },
+        { "Factorial", (void*)factorial, 1, {"integer"}, "integer" },
         { "Fibonacci", (void*)Fibonacci, 1, {"integer"}, "integer" },
-        { "beep", (void*)XBeep, 2, {"integer", "integer"}, "boolean" },
-        { "sleep", (void*)PluginSleep, 1, {"integer"}, "boolean" }
+        { "Beep", (void*)XBeep, 2, {"integer", "integer"}, "boolean" },
+        { "Sleep", (void*)PluginSleep, 1, {"integer"}, "boolean" },
+        { "DoEvents", (void*)DoEvents, 0, {}, "boolean" } // Added DoEvents function
     };
 
     // Exported function to retrieve the plugin entries.
