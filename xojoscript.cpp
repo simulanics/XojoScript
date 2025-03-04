@@ -1822,7 +1822,7 @@ void loadPlugins(VM& vm) {
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
                         //std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << fullPath << std::endl;
-						debugLog("Loaded plugin function: " + entry.name + " with arity " + entry.arity + " from " + fullPath);
+						debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + fullPath);
                     }
                 }
                 else {
