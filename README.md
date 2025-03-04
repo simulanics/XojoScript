@@ -17,6 +17,7 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 - **Bytecode Execution:** Runs compiled bytecode on a custom VM.
 - **Debug Logging:** Step-by-step debug logs to trace lexing, parsing, compiling, and execution.
 - **Intuitive Syntax:** Matches Xojo language syntax (Currently, functions require parenthesis - this is strictly for debugging purposes as other datatypes are added and tested. Parenthesis will be optional at a later date, as in Xojo's implementation, for interoperability and consistency.)
+- **Console / Web / GUI:** Build all sorts of applications from a single code-base.
 - **Open Source:** Released under the MIT License.
 
 ## Getting Started 🏁
