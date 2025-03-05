@@ -43,6 +43,16 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 
 Use the included `build_xojoscript.bat` / `./build_xojoscript.sh` and `build_plugins.bat` / `./build_plugins.sh` scripts to automatically build and compile a release version for testing. Debugging is always available using the debug trace and profiling commandline flag (see below).
 
+Linux users will need to chmod the build directory or individual scripts using:
+
+`chmod -R 755 ./XojoScript`
+
+`chmod 755 build_xxxx.sh`
+
+Otherwise "Permission denied" error will appear when attempting to execute the build scripts.
+
+
+
 
 **Manual Building**
 
