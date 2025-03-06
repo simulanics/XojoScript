@@ -21,3 +21,5 @@ Plugins/ReadPDF/Cargo.lock
 error.log
 /Plugins/Speak/target
 Plugins/Speak/Cargo.lock
+Plugins/GUICPP/XGUI.dll.manifest
+Plugins/GUICPP/XGUI.dll.manifest

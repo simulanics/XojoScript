@@ -14,6 +14,7 @@
 #include <functional>
 #include <vector>
 #include <sstream>
+#include <cwchar>
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -28,43 +29,46 @@
 #pragma comment(lib, "user32.lib")
 #define XPLUGIN_API __declspec(dllexport)
 
-// If not already defined, define the wide versions of the class names:
-#ifndef WC_COMBOBOXW
-#define WC_COMBOBOXW L"ComboBox"
-#endif
-#ifndef WC_LISTBOXW
-#define WC_LISTBOXW  L"ListBox"
-#endif
-
 // Define CB_SETMINVISIBLE if not defined (value from Windows 10 SDK)
 #ifndef CB_SETMINVISIBLE
 #define CB_SETMINVISIBLE 0x1702
 #endif
 
-// Global dark-mode colors/brush.
-static HBRUSH  gDarkBrush     = NULL;
-static COLORREF gDarkBkgColor  = RGB(32, 32, 32);
-static COLORREF gDarkTextColor = RGB(255, 255, 255);
+// For progress bar control.
+#ifndef PROGRESS_CLASS
+#define PROGRESS_CLASS PROGRESS_CLASSW
+#endif
 
-// Use CP_UTF8 to match the interpreter's std::string data (which is in UTF-8).
-// This ensures that text passed from the interpreter is converted properly.
+// For status bar control.
+#ifndef STATUSCLASSNAME
+#define STATUSCLASSNAME L"msctls_statusbar32"
+#endif
+
+// For up-down control.
+#ifndef UPDOWN_CLASS
+#define UPDOWN_CLASS L"msctls_updown32"
+#endif
+
+// Global tooltip control (shared).
+static HWND gTooltip = NULL;
+
+// Helper: convert narrow (char*) to wide (std::wstring)
 std::wstring toWString(const char* s) {
     if (!s) return L"";
-    // Convert from UTF-8 to wide string:
-    int len = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+    int len = MultiByteToWideChar(CP_ACP, 0, s, -1, NULL, 0);
     std::wstring ws(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s, -1, &ws[0], len);
+    MultiByteToWideChar(CP_ACP, 0, s, -1, &ws[0], len);
     if (!ws.empty() && ws.back() == L'\0')
         ws.pop_back();
     return ws;
 }
 
-// Convert wide string back to UTF-8.
+// Helper: convert wide (std::wstring) to narrow (std::string)
 std::string toString(const std::wstring& ws) {
     if(ws.empty()) return "";
-    int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, NULL, 0, NULL, NULL);
+    int len = WideCharToMultiByte(CP_ACP, 0, ws.c_str(), -1, NULL, 0, NULL, NULL);
     std::string s(len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], len, NULL, NULL);
+    WideCharToMultiByte(CP_ACP, 0, ws.c_str(), -1, &s[0], len, NULL, NULL);
     if (!s.empty() && s.back() == '\0')
         s.pop_back();
     return s;
@@ -90,69 +94,12 @@ std::wstring join(const std::vector<std::wstring>& elems, wchar_t delim) {
     }
     return result;
 }
-
-// Subclass procedure for the main combo control (dropdown list area) to paint border & background in dark mode.
-LRESULT CALLBACK ComboSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR)
-{
-    switch(msg)
-    {
-        case WM_NCPAINT:
-        {
-            HDC hdc = GetWindowDC(hwnd);
-            if(hdc)
-            {
-                RECT rc;
-                GetWindowRect(hwnd, &rc);
-                OffsetRect(&rc, -rc.left, -rc.top);
-                HBRUSH brush = CreateSolidBrush(gDarkBkgColor);
-                FillRect(hdc, &rc, brush);
-                DeleteObject(brush);
-                FrameRect(hdc, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
-                ReleaseDC(hwnd, hdc);
-            }
-            return 0;
-        }
-        default:
-            break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-// Subclass procedure for the static (selected) portion of combo boxes, so the displayed text is also drawn in dark mode.
-LRESULT CALLBACK ComboStaticProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR)
-{
-    switch(msg)
-    {
-        case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hwnd, &ps);
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            // Fill background with dark color:
-            FillRect(hdc, &rc, gDarkBrush);
-
-            // Retrieve the text from the static portion and draw it in white:
-            wchar_t text[256] = {0};
-            GetWindowTextW(hwnd, text, 256);
-            SetTextColor(hdc, gDarkTextColor);
-            SetBkMode(hdc, TRANSPARENT);
-            DrawTextW(hdc, text, -1, &rc, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
-            EndPaint(hwnd, &ps);
-            return 0;
-        }
-        default:
-            break;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
 #else
 #include <gtk/gtk.h>
 #define XPLUGIN_API __attribute__((visibility("default")))
 #endif
 
-// Define UIObject struct.
+// Updated UIObject struct now includes a control type string.
 struct UIObject {
 #ifdef _WIN32
     HWND hwnd;
@@ -160,19 +107,25 @@ struct UIObject {
     GtkWidget* widget;
 #endif
     std::function<void()> eventHandler;
+    std::string type; // e.g., "statusbar", "datepicker", etc.
 };
 
 // Global map for controls.
 std::map<std::string, UIObject> uiObjects;
 
 #ifdef _WIN32
-// Apply dark mode attribute (Windows 10+).
+// Global dark-mode colors/brush.
+static HBRUSH  gDarkBrush     = NULL;
+static COLORREF gDarkBkgColor  = RGB(32, 32, 32);
+static COLORREF gDarkTextColor = RGB(255, 255, 255);
+
+// Apply dark mode attribute.
 void ApplyDarkMode(HWND hwnd) {
     BOOL darkMode = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
 }
 
-// Main window procedure.
+// Window procedure.
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE:
@@ -189,13 +142,21 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SIZE:
         case WM_SIZING:
         case WM_MOVE:
-        case WM_WINDOWPOSCHANGED:
+        case WM_WINDOWPOSCHANGED: {
             InvalidateRect(hwnd, NULL, TRUE);
             UpdateWindow(hwnd);
+            // Reposition status bar controls to dock at the bottom.
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            for (auto& obj : uiObjects) {
+                if (obj.second.type == "statusbar" && GetParent(obj.second.hwnd) == hwnd) {
+                    SendMessageW(obj.second.hwnd, WM_SIZE, 0, 0);
+                }
+            }
             break;
+        }
         case WM_DRAWITEM: {
             LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
-            // Owner-drawn button
             if (dis->CtlType == ODT_BUTTON) {
                 COLORREF btnColor = (dis->itemState & ODS_SELECTED) ? RGB(96,96,96) : RGB(64,64,64);
                 HBRUSH buttonBrush = CreateSolidBrush(btnColor);
@@ -216,7 +177,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     DrawFocusRect(dis->hDC, &dis->rcItem);
                 return TRUE;
             }
-            // Owner-drawn listbox items
             else if (dis->CtlType == ODT_LISTBOX) {
                 int index = dis->itemID;
                 if (index == -1) break;
@@ -231,26 +191,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 TextOutW(dis->hDC, dis->rcItem.left + 2, dis->rcItem.top, itemText, (int)wcslen(itemText));
                 return TRUE;
             }
-            // Owner-drawn combo box items
-            else if (dis->CtlType == ODT_COMBOBOX) {
-                int index = dis->itemID;
-                if (index == -1) break;
-                wchar_t itemText[256] = {0};
-                SendMessageW(dis->hwndItem, CB_GETLBTEXT, index, (LPARAM)itemText);
-                COLORREF bgColor = (dis->itemState & ODS_SELECTED) ? RGB(0,0,0) : gDarkBkgColor;
-                HBRUSH brush = CreateSolidBrush(bgColor);
-                FillRect(dis->hDC, &dis->rcItem, brush);
-                DeleteObject(brush);
-                SetTextColor(dis->hDC, gDarkTextColor);
-                SetBkMode(dis->hDC, TRANSPARENT);
-                TextOutW(dis->hDC, dis->rcItem.left + 2, dis->rcItem.top, itemText, (int)wcslen(itemText));
-                if (dis->itemState & ODS_FOCUS)
-                    DrawFocusRect(dis->hDC, &dis->rcItem);
-                return TRUE;
-            }
             break;
         }
-        // Dark mode text for standard controls
         case WM_CTLCOLORLISTBOX:
         case WM_CTLCOLORBTN:
         case WM_CTLCOLOREDIT:
@@ -266,7 +208,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         default:
             break;
     }
-    // Dispatch custom event handlers if any exist
     for (auto& obj : uiObjects) {
         if (obj.second.hwnd == hwnd && obj.second.eventHandler)
             obj.second.eventHandler();
@@ -274,7 +215,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 #else
-// GTK on macOS/Linux
 static gboolean on_configure_event(GtkWidget* widget, GdkEvent* event, gpointer user_data) {
     gtk_widget_queue_draw(widget);
     return FALSE;
@@ -285,25 +225,25 @@ static gboolean on_configure_event(GtkWidget* widget, GdkEvent* event, gpointer 
 XPLUGIN_API bool CreateWindowX(const char* objname, int left, int top, int width, int height,
                                bool hasMin, bool hasMax, bool hasClose) {
 #ifdef _WIN32
-    WNDCLASSW wc = {};
+    WNDCLASS wc = {};
     wc.lpfnWndProc   = WindowProc;
     wc.hInstance     = GetModuleHandle(NULL);
     wc.lpszClassName = L"XojoPluginWindow";
-    RegisterClassW(&wc);
-
+    RegisterClass(&wc);
+    
     DWORD style = WS_OVERLAPPEDWINDOW;
     if (!hasMin)  style &= ~WS_MINIMIZEBOX;
     if (!hasMax)  style &= ~WS_MAXIMIZEBOX;
     if (!hasClose) style &= ~WS_SYSMENU;
-
-    std::wstring wTitle = toWString(objname);
-    HWND hwnd = CreateWindowExW(0, L"XojoPluginWindow", wTitle.c_str(), style,
+    
+    std::wstring title = toWString(objname);
+    HWND hwnd = CreateWindowExW(0, L"XojoPluginWindow", title.c_str(), style,
                                 left, top, width, height,
                                 NULL, NULL, GetModuleHandle(NULL), NULL);
     if (!hwnd) return false;
     ShowWindow(hwnd, SW_SHOW);
     ApplyDarkMode(hwnd);
-    uiObjects[objname] = { hwnd, nullptr };
+    uiObjects[objname] = { hwnd, nullptr, "" };
     return true;
 #else
     gtk_init(NULL, NULL);
@@ -313,7 +253,7 @@ XPLUGIN_API bool CreateWindowX(const char* objname, int left, int top, int width
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(window, "configure-event", G_CALLBACK(on_configure_event), NULL);
     gtk_widget_show_all(window);
-    uiObjects[objname] = { window, nullptr };
+    uiObjects[objname] = { window, nullptr, "" };
     return true;
 #endif
 }
@@ -342,7 +282,7 @@ XPLUGIN_API bool XAddButton(const char* objname, const char* parentname,
                                 parent, NULL, GetModuleHandle(NULL), NULL);
     if (!button) return false;
     ApplyDarkMode(button);
-    uiObjects[objname] = { button, nullptr };
+    uiObjects[objname] = { button, nullptr, "" };
     return true;
 #else
     GtkWidget* parent = uiObjects[parentname].widget;
@@ -350,7 +290,7 @@ XPLUGIN_API bool XAddButton(const char* objname, const char* parentname,
     gtk_fixed_put(GTK_FIXED(parent), button, left, top);
     gtk_widget_set_size_request(button, width, height);
     gtk_widget_show(button);
-    uiObjects[objname] = { button, nullptr };
+    uiObjects[objname] = { button, nullptr, "" };
     return true;
 #endif
 }
@@ -366,7 +306,7 @@ XPLUGIN_API bool XAddTextField(const char* objname, const char* parentname,
                               parent, NULL, GetModuleHandle(NULL), NULL);
     if (!edit) return false;
     ApplyDarkMode(edit);
-    uiObjects[objname] = { edit, nullptr };
+    uiObjects[objname] = { edit, nullptr, "" };
     return true;
 #else
     GtkWidget* parent = uiObjects[parentname].widget;
@@ -374,7 +314,7 @@ XPLUGIN_API bool XAddTextField(const char* objname, const char* parentname,
     gtk_fixed_put(GTK_FIXED(parent), entry, left, top);
     gtk_widget_set_size_request(entry, width, height);
     gtk_widget_show(entry);
-    uiObjects[objname] = { entry, nullptr };
+    uiObjects[objname] = { entry, nullptr, "" };
     return true;
 #endif
 }
@@ -390,7 +330,7 @@ XPLUGIN_API bool XAddTextArea(const char* objname, const char* parentname,
                               parent, NULL, GetModuleHandle(NULL), NULL);
     if (!edit) return false;
     ApplyDarkMode(edit);
-    uiObjects[objname] = { edit, nullptr };
+    uiObjects[objname] = { edit, nullptr, "" };
     return true;
 #else
     GtkWidget* parent = uiObjects[parentname].widget;
@@ -398,34 +338,23 @@ XPLUGIN_API bool XAddTextArea(const char* objname, const char* parentname,
     gtk_fixed_put(GTK_FIXED(parent), textview, left, top);
     gtk_widget_set_size_request(textview, width, height);
     gtk_widget_show(textview);
-    uiObjects[objname] = { textview, nullptr };
+    uiObjects[objname] = { textview, nullptr, "" };
     return true;
 #endif
 }
 
-// XAddComboBox: creates an editable dropdown using owner-draw, in wide-character mode, then subclasses it for dark mode.
+// XAddComboBox: creates an editable dropdown.
 XPLUGIN_API bool XAddComboBox(const char* objname, const char* parentname,
                               int left, int top, int width, int height) {
 #ifdef _WIN32
     HWND parent = uiObjects[parentname].hwnd;
-    std::wstring wObj = toWString(objname);
-    // Use WC_COMBOBOXW with CBS_DROPDOWN and owner-draw fixed:
-    HWND combo = CreateWindowW(WC_COMBOBOXW, L"",
-                               WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | CBS_OWNERDRAWFIXED,
+    HWND combo = CreateWindowW(L"COMBOBOX", L"",
+                               WS_CHILD | WS_VISIBLE | CBS_DROPDOWN,
                                left, top, width, height,
                                parent, NULL, GetModuleHandle(NULL), NULL);
     if (!combo) return false;
     ApplyDarkMode(combo);
-    // Subclass the main combo
-    SetWindowSubclass(combo, ComboSubclassProc, 1, 0);
-    // Also subclass the static portion so text is displayed in dark mode properly:
-    COMBOBOXINFO cbi = {0};
-    cbi.cbSize = sizeof(cbi);
-    if(GetComboBoxInfo(combo, &cbi)) {
-        if(cbi.hwndItem)
-            SetWindowSubclass(cbi.hwndItem, ComboStaticProc, 1, 0);
-    }
-    uiObjects[objname] = { combo, nullptr };
+    uiObjects[objname] = { combo, nullptr, "" };
     return true;
 #else
     GtkWidget* parent = uiObjects[parentname].widget;
@@ -433,34 +362,23 @@ XPLUGIN_API bool XAddComboBox(const char* objname, const char* parentname,
     gtk_fixed_put(GTK_FIXED(parent), combo, left, top);
     gtk_widget_set_size_request(combo, width, height);
     gtk_widget_show(combo);
-    uiObjects[objname] = { combo, nullptr };
+    uiObjects[objname] = { combo, nullptr, "" };
     return true;
 #endif
 }
 
-// XAddPopupBox: creates a read-only dropdown using owner-draw, in wide-character mode, then subclasses it for dark mode.
+// XAddPopupBox: creates a read-only dropdown.
 XPLUGIN_API bool XAddPopupBox(const char* objname, const char* parentname,
                               int left, int top, int width, int height) {
 #ifdef _WIN32
     HWND parent = uiObjects[parentname].hwnd;
-    std::wstring wObj = toWString(objname);
-    // Use WC_COMBOBOXW with CBS_DROPDOWNLIST and owner-draw fixed:
-    HWND combo = CreateWindowW(WC_COMBOBOXW, L"",
-                               WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED,
+    HWND combo = CreateWindowW(L"COMBOBOX", L"",
+                               WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
                                left, top, width, height,
                                parent, NULL, GetModuleHandle(NULL), NULL);
     if (!combo) return false;
     ApplyDarkMode(combo);
-    // Subclass the main combo
-    SetWindowSubclass(combo, ComboSubclassProc, 1, 0);
-    // Subclass the static portion
-    COMBOBOXINFO cbi = {0};
-    cbi.cbSize = sizeof(cbi);
-    if(GetComboBoxInfo(combo, &cbi)) {
-        if(cbi.hwndItem)
-            SetWindowSubclass(cbi.hwndItem, ComboStaticProc, 1, 0);
-    }
-    uiObjects[objname] = { combo, nullptr };
+    uiObjects[objname] = { combo, nullptr, "" };
     return true;
 #else
     GtkWidget* parent = uiObjects[parentname].widget;
@@ -468,24 +386,24 @@ XPLUGIN_API bool XAddPopupBox(const char* objname, const char* parentname,
     gtk_fixed_put(GTK_FIXED(parent), combo, left, top);
     gtk_widget_set_size_request(combo, width, height);
     gtk_widget_show(combo);
-    uiObjects[objname] = { combo, nullptr };
+    uiObjects[objname] = { combo, nullptr, "" };
     return true;
 #endif
 }
 
-// XAddListBox: creates an owner-drawn listbox with border, in wide-character mode, then applies dark mode.
+// XAddListBox: creates an owner-drawn listbox with border.
 XPLUGIN_API bool XAddListBox(const char* objname, const char* parentname,
                              int left, int top, int width, int height) {
 #ifdef _WIN32
     HWND parent = uiObjects[parentname].hwnd;
-    HWND listbox = CreateWindowW(WC_LISTBOXW, L"",
+    HWND listbox = CreateWindowW(L"LISTBOX", L"",
                                  WS_CHILD | WS_VISIBLE | LBS_NOTIFY | LBS_OWNERDRAWFIXED |
                                  LBS_HASSTRINGS | WS_BORDER,
                                  left, top, width, height,
                                  parent, NULL, GetModuleHandle(NULL), NULL);
     if (!listbox) return false;
     ApplyDarkMode(listbox);
-    uiObjects[objname] = { listbox, nullptr };
+    uiObjects[objname] = { listbox, nullptr, "" };
     return true;
 #else
     GtkWidget* parent = uiObjects[parentname].widget;
@@ -493,7 +411,7 @@ XPLUGIN_API bool XAddListBox(const char* objname, const char* parentname,
     gtk_fixed_put(GTK_FIXED(parent), listbox, left, top);
     gtk_widget_set_size_request(listbox, width, height);
     gtk_widget_show(listbox);
-    uiObjects[objname] = { listbox, nullptr };
+    uiObjects[objname] = { listbox, nullptr, "" };
     return true;
 #endif
 }
@@ -547,7 +465,7 @@ XPLUGIN_API bool SetFontSize(const char* objname, int size) {
     return true;
 }
 
-// Listbox_RemoveAt: removes an item at index from a listbox.
+// Listbox_RemoveAt: removes an item at index.
 XPLUGIN_API bool Listbox_RemoveAt(const char* objname, int index) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -555,7 +473,7 @@ XPLUGIN_API bool Listbox_RemoveAt(const char* objname, int index) {
     return (res != LB_ERR);
 }
 
-// Listbox_InsertAt: inserts an item at index in a listbox.
+// Listbox_InsertAt: inserts an item at index.
 XPLUGIN_API bool Listbox_InsertAt(const char* objname, int index, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -564,7 +482,7 @@ XPLUGIN_API bool Listbox_InsertAt(const char* objname, int index, const char* te
     return (res != LB_ERR);
 }
 
-// Listbox_DeleteAll: deletes all items from a listbox.
+// Listbox_DeleteAll: deletes all items.
 XPLUGIN_API bool Listbox_DeleteAll(const char* objname) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -572,7 +490,7 @@ XPLUGIN_API bool Listbox_DeleteAll(const char* objname) {
     return (res != LB_ERR);
 }
 
-// Listbox_GetCellTextAt: retrieves text from a listbox item (columns delimited by tab).
+// Listbox_GetCellTextAt: retrieves text from an item (columns delimited by tab).
 XPLUGIN_API std::string Listbox_GetCellTextAt(const char* objname, int row, int col) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -585,7 +503,7 @@ XPLUGIN_API std::string Listbox_GetCellTextAt(const char* objname, int row, int 
     return toString(parts[col]);
 }
 
-// Listbox_SetCellTextAt: sets text in a specific cell (by rewriting the entire row with tabs).
+// Listbox_SetCellTextAt: sets text in a specific cell.
 XPLUGIN_API std::string Listbox_SetCellTextAt(const char* objname, int row, int col, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -612,13 +530,14 @@ XPLUGIN_API bool Set_ListBoxRowHeight(const char* objname, int rowHeight) {
     return (res != LB_ERR);
 }
 
-// Popupbox (read-only dropdown) expansions:
+// Popupbox functions for read-only dropdown.
 XPLUGIN_API bool Popupbox_RemoveAt(const char* objname, int index) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
     LRESULT res = SendMessageW(it->second.hwnd, CB_DELETESTRING, index, 0);
     return (res != CB_ERR);
 }
+
 XPLUGIN_API bool Popupbox_InsertAt(const char* objname, int index, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -626,12 +545,14 @@ XPLUGIN_API bool Popupbox_InsertAt(const char* objname, int index, const char* t
     LRESULT res = SendMessageW(it->second.hwnd, CB_INSERTSTRING, index, (LPARAM)wText.c_str());
     return (res != CB_ERR);
 }
+
 XPLUGIN_API bool Popupbox_DeleteAll(const char* objname) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
     LRESULT res = SendMessageW(it->second.hwnd, CB_RESETCONTENT, 0, 0);
     return (res != CB_ERR);
 }
+
 XPLUGIN_API std::string Popupbox_GetRowValueAt(const char* objname, int index) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -640,6 +561,7 @@ XPLUGIN_API std::string Popupbox_GetRowValueAt(const char* objname, int index) {
     if (res == CB_ERR) return "";
     return toString(buffer);
 }
+
 XPLUGIN_API std::string Popupbox_SetRowValueAt(const char* objname, int index, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -650,7 +572,8 @@ XPLUGIN_API std::string Popupbox_SetRowValueAt(const char* objname, int index, c
     if (resIns == CB_ERR) return "";
     return toString(wText);
 }
-// Popupbox_Add: adds an item to a read-only dropdown and selects it if none is selected.
+
+// Popupbox_Add: adds an item to a read-only dropdown and sets it as selected if none exists.
 XPLUGIN_API bool Popupbox_Add(const char* objname, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -662,13 +585,14 @@ XPLUGIN_API bool Popupbox_Add(const char* objname, const char* text) {
     return true;
 }
 
-// ComboBox (editable dropdown) expansions:
+// ComboBox functions for editable dropdown.
 XPLUGIN_API bool ComboBox_RemoveAt(const char* objname, int index) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
     LRESULT res = SendMessageW(it->second.hwnd, CB_DELETESTRING, index, 0);
     return (res != CB_ERR);
 }
+
 XPLUGIN_API bool ComboBox_InsertAt(const char* objname, int index, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -676,12 +600,14 @@ XPLUGIN_API bool ComboBox_InsertAt(const char* objname, int index, const char* t
     LRESULT res = SendMessageW(it->second.hwnd, CB_INSERTSTRING, index, (LPARAM)wText.c_str());
     return (res != CB_ERR);
 }
+
 XPLUGIN_API bool ComboBox_DeleteAll(const char* objname) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
     LRESULT res = SendMessageW(it->second.hwnd, CB_RESETCONTENT, 0, 0);
     return (res != CB_ERR);
 }
+
 XPLUGIN_API std::string ComboBox_GetRowValueAt(const char* objname, int index) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -690,6 +616,7 @@ XPLUGIN_API std::string ComboBox_GetRowValueAt(const char* objname, int index) {
     if (res == CB_ERR) return "";
     return toString(buffer);
 }
+
 XPLUGIN_API std::string ComboBox_SetRowValueAt(const char* objname, int index, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -700,7 +627,7 @@ XPLUGIN_API std::string ComboBox_SetRowValueAt(const char* objname, int index, c
     if (resIns == CB_ERR) return "";
     return toString(wText);
 }
-// ComboBox_Add: adds an item to an editable dropdown and selects it if none selected.
+
 XPLUGIN_API bool ComboBox_Add(const char* objname, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -712,7 +639,7 @@ XPLUGIN_API bool ComboBox_Add(const char* objname, const char* text) {
     return true;
 }
 
-// SetDropdownHeight: sets the dropdown (list) height by specifying how many items are visible.
+// SetDropdownHeight: sets the dropdown (list) height for popupboxes and comboboxes.
 XPLUGIN_API bool SetDropdownHeight(const char* objname, int height) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -723,7 +650,7 @@ XPLUGIN_API bool SetDropdownHeight(const char* objname, int height) {
     return (res != CB_ERR);
 }
 
-// SetPopupBoxSelectedIndex: sets the selected index for a popupbox and updates its text if needed.
+// SetPopupBoxSelectedIndex: sets the selected index for a popupbox and updates its text.
 XPLUGIN_API bool SetPopupBoxSelectedIndex(const char* objname, int index, const char* text) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return false;
@@ -736,7 +663,7 @@ XPLUGIN_API bool SetPopupBoxSelectedIndex(const char* objname, int index, const 
     return (selRes != CB_ERR);
 }
 
-// GetPopupBoxSelectedIndex: returns the text of the selected index if it matches 'index', otherwise empty.
+// GetPopupBoxSelectedIndex: returns the text of the selected index if it matches.
 XPLUGIN_API std::string GetPopupBoxSelectedIndex(const char* objname, int index) {
     auto it = uiObjects.find(objname);
     if (it == uiObjects.end()) return "";
@@ -747,9 +674,8 @@ XPLUGIN_API std::string GetPopupBoxSelectedIndex(const char* objname, int index)
     if (res == CB_ERR) return "";
     return toString(buffer);
 }
-
 #else
-// GTK stubs (for macOS/Linux). If on Linux/macOS, none of the advanced Windows logic applies:
+// GTK stubs.
 XPLUGIN_API bool SetFontName(const char* objname, const char* fontname) { return false; }
 XPLUGIN_API bool SetFontSize(const char* objname, int size) { return false; }
 XPLUGIN_API bool Listbox_RemoveAt(const char* objname, int index) { return false; }
@@ -777,6 +703,462 @@ XPLUGIN_API bool SetPopupBoxSelectedIndex(const char* objname, int index, const 
 XPLUGIN_API std::string GetPopupBoxSelectedIndex(const char* objname, int index) { return ""; }
 #endif
 
+// NEW FUNCTIONS: Additional Controls with Dark Mode Applied
+
+// Checkbox
+XPLUGIN_API bool XAddCheckBox(const char* objname, const char* parentname, const char* text, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    std::wstring wText = toWString(text);
+    HWND checkbox = CreateWindowW(L"BUTTON", wText.c_str(), WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+                                  left, top, width, height, parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!checkbox) return false;
+    ApplyDarkMode(checkbox);
+    uiObjects[objname] = { checkbox, nullptr, "checkbox" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API bool CheckBox_SetChecked(const char* objname, bool checked) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return false;
+    SendMessageW(it->second.hwnd, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API bool CheckBox_GetChecked(const char* objname) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return false;
+    LRESULT res = SendMessageW(it->second.hwnd, BM_GETCHECK, 0, 0);
+    return (res == BST_CHECKED);
+#else
+    return false;
+#endif
+}
+
+// Radio Button
+XPLUGIN_API bool XAddRadioButton(const char* objname, const char* parentname, const char* text, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    std::wstring wText = toWString(text);
+    HWND radio = CreateWindowW(L"BUTTON", wText.c_str(), WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+                               left, top, width, height, parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!radio) return false;
+    ApplyDarkMode(radio);
+    uiObjects[objname] = { radio, nullptr, "radiobutton" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API bool RadioButton_SetChecked(const char* objname, bool checked) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return false;
+    SendMessageW(it->second.hwnd, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API bool RadioButton_GetChecked(const char* objname) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return false;
+    LRESULT res = SendMessageW(it->second.hwnd, BM_GETCHECK, 0, 0);
+    return (res == BST_CHECKED);
+#else
+    return false;
+#endif
+}
+
+// Line (Horizontal)
+XPLUGIN_API bool XAddLine(const char* objname, const char* parentname, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND line = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+                              left, top, width, height, parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!line) return false;
+    ApplyDarkMode(line);
+    uiObjects[objname] = { line, nullptr, "line" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// GroupBox
+XPLUGIN_API bool XAddGroupBox(const char* objname, const char* parentname, const char* text, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    std::wstring wText = toWString(text);
+    HWND group = CreateWindowW(L"BUTTON", wText.c_str(), WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+                               left, top, width, height, parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!group) return false;
+    ApplyDarkMode(group);
+    uiObjects[objname] = { group, nullptr, "groupbox" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Slider (Trackbar)
+XPLUGIN_API bool XAddSlider(const char* objname, const char* parentname, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND slider = CreateWindowW(TRACKBAR_CLASSW, L"",
+                                WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS,
+                                left, top, width, height,
+                                parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!slider) return false;
+    ApplyDarkMode(slider);
+    uiObjects[objname] = { slider, nullptr, "slider" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API bool Slider_SetValue(const char* objname, int value) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return false;
+    SendMessageW(it->second.hwnd, TBM_SETPOS, TRUE, value);
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API int Slider_GetValue(const char* objname) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return -1;
+    return (int)SendMessageW(it->second.hwnd, TBM_GETPOS, 0, 0);
+#else
+    return -1;
+#endif
+}
+
+// Color Picker
+XPLUGIN_API bool XAddColorPicker(const char* objname, const char* parentname, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND cp = CreateWindowW(L"SysColorPicker32", L"",
+                            WS_CHILD | WS_VISIBLE,
+                            left, top, width, height,
+                            parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!cp) {
+        cp = CreateWindowW(L"BUTTON", L"Color", WS_CHILD | WS_VISIBLE,
+                           left, top, width, height,
+                           parent, NULL, GetModuleHandle(NULL), NULL);
+    }
+    if (!cp) return false;
+    ApplyDarkMode(cp);
+    uiObjects[objname] = { cp, nullptr, "colorpicker" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Windows Chart (simulated)
+XPLUGIN_API bool XAddChart(const char* objname, const char* parentname, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND chart = CreateWindowW(L"STATIC", L"Chart", WS_CHILD | WS_VISIBLE | SS_BLACKFRAME,
+                                 left, top, width, height,
+                                 parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!chart) return false;
+    ApplyDarkMode(chart);
+    uiObjects[objname] = { chart, nullptr, "chart" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Movie Player using MCIWnd
+XPLUGIN_API bool XAddMoviePlayer(const char* objname, const char* parentname, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND movie = CreateWindowW(L"MCIWndClass", L"",
+                               WS_CHILD | WS_VISIBLE,
+                               left, top, width, height,
+                               parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!movie) return false;
+    ApplyDarkMode(movie);
+    uiObjects[objname] = { movie, nullptr, "movieplayer" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// HTML Viewer (non-IE based; simulated as a static control)
+XPLUGIN_API bool XAddHTMLViewer(const char* objname, const char* parentname, int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND html = CreateWindowW(L"STATIC", L"HTML Viewer", WS_CHILD | WS_VISIBLE | SS_LEFT | WS_BORDER,
+                                left, top, width, height,
+                                parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!html) return false;
+    ApplyDarkMode(html);
+    uiObjects[objname] = { html, nullptr, "htmlviewer" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Date Picker (date only)
+XPLUGIN_API bool XAddDatePicker(const char* objname, const char* parentname,
+                                int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND dtp = CreateWindowW(L"SysDateTimePick32", L"",
+                             WS_CHILD | WS_VISIBLE | DTS_SHORTDATEFORMAT,
+                             left, top, width, height,
+                             parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!dtp) return false;
+    ApplyDarkMode(dtp);
+    uiObjects[objname] = { dtp, nullptr, "datepicker" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Time Picker (time only)
+XPLUGIN_API bool XAddTimePicker(const char* objname, const char* parentname,
+                                int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND tp = CreateWindowW(L"SysDateTimePick32", L"",
+                            WS_CHILD | WS_VISIBLE | DTS_TIMEFORMAT,
+                            left, top, width, height,
+                            parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!tp) return false;
+    ApplyDarkMode(tp);
+    uiObjects[objname] = { tp, nullptr, "timepicker" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Calendar Control
+XPLUGIN_API bool XAddCalendarControl(const char* objname, const char* parentname,
+                                     int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND cal = CreateWindowW(L"SysMonthCal32", L"",
+                             WS_CHILD | WS_VISIBLE,
+                             left, top, width, height,
+                             parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!cal) return false;
+    ApplyDarkMode(cal);
+    uiObjects[objname] = { cal, nullptr, "calendar" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Label (transparent non-editable)
+XPLUGIN_API bool XAddLabel(const char* objname, const char* parentname, const char* text,
+                           int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    std::wstring wText = toWString(text);
+    HWND label = CreateWindowW(L"STATIC", wText.c_str(),
+                               WS_CHILD | WS_VISIBLE | SS_LEFT,
+                               left, top, width, height,
+                               parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!label) return false;
+    ApplyDarkMode(label);
+    uiObjects[objname] = { label, nullptr, "label" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Progress Bar
+XPLUGIN_API bool XAddProgressBar(const char* objname, const char* parentname,
+                                 int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND pb = CreateWindowW(PROGRESS_CLASS, L"",
+                            WS_CHILD | WS_VISIBLE,
+                            left, top, width, height,
+                            parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!pb) return false;
+    ApplyDarkMode(pb);
+    uiObjects[objname] = { pb, nullptr, "progressbar" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API bool ProgressBar_SetValue(const char* objname, int value) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return false;
+    HWND pb = it->second.hwnd;
+    LRESULT res = SendMessageW(pb, PBM_SETPOS, (WPARAM)value, 0);
+    return (res != 0);
+#else
+    return false;
+#endif
+}
+
+XPLUGIN_API int ProgressBar_GetValue(const char* objname) {
+#ifdef _WIN32
+    auto it = uiObjects.find(objname);
+    if(it == uiObjects.end()) return -1;
+    HWND pb = it->second.hwnd;
+    LRESULT pos = SendMessageW(pb, PBM_GETPOS, 0, 0);
+    return (int)pos;
+#else
+    return -1;
+#endif
+}
+
+// Status Bar (docked)
+XPLUGIN_API bool XAddStatusBar(const char* objname, const char* parentname) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND sb = CreateWindowW(STATUSCLASSNAME, L"",
+                            WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
+                            0, 0, 0, 0,
+                            parent, NULL, GetModuleHandle(NULL), NULL);
+    if(!sb) return false;
+    ApplyDarkMode(sb);
+    uiObjects[objname] = { sb, nullptr, "statusbar" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Tab Control
+XPLUGIN_API bool XAddTabControl(const char* objname, const char* parentname,
+                                int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND tab = CreateWindowW(WC_TABCONTROL, L"",
+                             WS_CHILD | WS_VISIBLE | TCS_TABS,
+                             left, top, width, height,
+                             parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!tab) return false;
+    ApplyDarkMode(tab);
+    uiObjects[objname] = { tab, nullptr, "tabcontrol" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Horizontal Scroll Bar
+XPLUGIN_API bool XAddHScrollBar(const char* objname, const char* parentname,
+                                int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND hScroll = CreateWindowW(L"SCROLLBAR", L"",
+                                 WS_CHILD | WS_VISIBLE | SBS_HORZ,
+                                 left, top, width, height,
+                                 parent, NULL, GetModuleHandle(NULL), NULL);
+    if(!hScroll) return false;
+    ApplyDarkMode(hScroll);
+    uiObjects[objname] = { hScroll, nullptr, "hscroll" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Vertical Scroll Bar
+XPLUGIN_API bool XAddVScrollBar(const char* objname, const char* parentname,
+                                int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND vScroll = CreateWindowW(L"SCROLLBAR", L"",
+                                 WS_CHILD | WS_VISIBLE | SBS_VERT,
+                                 left, top, width, height,
+                                 parent, NULL, GetModuleHandle(NULL), NULL);
+    if(!vScroll) return false;
+    ApplyDarkMode(vScroll);
+    uiObjects[objname] = { vScroll, nullptr, "vscroll" };
+    return true;
+#else
+    return false;
+#endif
+}
+
+// ToolTip
+XPLUGIN_API bool XAddToolTip(const char* attachControl, const char* tipText) {
+#ifdef _WIN32
+    auto it = uiObjects.find(attachControl);
+    if(it == uiObjects.end()) return false;
+    HWND ctrl = it->second.hwnd;
+    HWND parent = GetParent(ctrl);
+    if(!gTooltip) {
+        gTooltip = CreateWindowExW(0, TOOLTIPS_CLASSW, L"",
+                                   WS_POPUP | TTS_ALWAYSTIP,
+                                   CW_USEDEFAULT, CW_USEDEFAULT,
+                                   CW_USEDEFAULT, CW_USEDEFAULT,
+                                   parent, NULL, GetModuleHandle(NULL), NULL);
+        if(!gTooltip) return false;
+    }
+    TOOLINFOW ti = {0};
+    ti.cbSize = sizeof(ti);
+    ti.uFlags = TTF_SUBCLASS;
+    ti.hwnd = parent;
+    ti.hinst = GetModuleHandle(NULL);
+    GetClientRect(ctrl, &ti.rect);
+    MapWindowPoints(ctrl, parent, (LPPOINT)&ti.rect, 2);
+    std::wstring wsTip = toWString(tipText);
+    wchar_t* tipBuffer = new wchar_t[wsTip.size()+1];
+    wcscpy(tipBuffer, wsTip.c_str());
+    ti.lpszText = tipBuffer;
+    ti.uId = (UINT_PTR)ctrl;
+    SendMessageW(gTooltip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Up-Down Control (Spin)
+XPLUGIN_API bool XAddUpDownControl(const char* objname, const char* parentname,
+                                   int left, int top, int width, int height) {
+#ifdef _WIN32
+    HWND parent = uiObjects[parentname].hwnd;
+    HWND updown = CreateWindowW(UPDOWN_CLASS, L"",
+                                WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_ARROWKEYS,
+                                left, top, width, height,
+                                parent, NULL, GetModuleHandle(NULL), NULL);
+    if (!updown) return false;
+    ApplyDarkMode(updown);
+    uiObjects[objname] = { updown, nullptr, "updown" };
+    return true;
+#else
+    return false;
+#endif
+}
+
 // XRefresh: forces refresh/invalidate of all controls.
 XPLUGIN_API void XRefresh(bool updatenow) {
 #ifdef _WIN32
@@ -801,7 +1183,6 @@ XPLUGIN_API void XRefresh(bool updatenow) {
 }
 
 #ifdef _WIN32
-// DllMain for Windows
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     switch(ul_reason_for_call) {
         case DLL_PROCESS_ATTACH: {
@@ -829,23 +1210,22 @@ typedef struct PluginEntry {
     const char* retType;
 } PluginEntry;
 
-// The plugin's function table
 static PluginEntry pluginEntries[] = {
-    { "XCreateWindow",    (void*)CreateWindowX,    8,  {"string","integer","integer","integer","integer","boolean","boolean","boolean"}, "boolean" },
-    { "XDestroyControl",  (void*)XDestroyControl,  1,  {"string"}, "boolean" },
-    { "XAddButton",       (void*)XAddButton,       6,  {"string","string","integer","integer","integer","integer"}, "boolean" },
-    { "XAddTextField",    (void*)XAddTextField,    6,  {"string","string","integer","integer","integer","integer"}, "boolean" },
-    { "XAddTextArea",     (void*)XAddTextArea,     6,  {"string","string","integer","integer","integer","integer"}, "boolean" },
-    { "XAddComboBox",     (void*)XAddComboBox,     6,  {"string","string","integer","integer","integer","integer"}, "boolean" },
-    { "XAddPopupBox",     (void*)XAddPopupBox,     6,  {"string","string","integer","integer","integer","integer"}, "boolean" },
-    { "XAddListBox",      (void*)XAddListBox,      6,  {"string","string","integer","integer","integer","integer"}, "boolean" },
-    { "Listbox_Add",      (void*)Listbox_Add,      2,  {"string","string"}, "boolean" },
-    { "XRefresh",         (void*)XRefresh,         1,  {"boolean"}, "boolean" },
-    { "Set_FontName",     (void*)SetFontName,      2,  {"string","string"}, "boolean" },
-    { "Set_FontSize",     (void*)SetFontSize,      2,  {"string","integer"}, "boolean" },
-    { "Listbox_RemoveAt", (void*)Listbox_RemoveAt, 2,  {"string","integer"}, "boolean" },
-    { "Listbox_InsertAt", (void*)Listbox_InsertAt, 3,  {"string","integer","string"}, "boolean" },
-    { "Listbox_DeleteAll",(void*)Listbox_DeleteAll,1,  {"string"}, "boolean" },
+    { "XCreateWindow",    (void*)CreateWindowX,    8, {"string","integer","integer","integer","integer","boolean","boolean","boolean"}, "boolean" },
+    { "XDestroyControl",  (void*)XDestroyControl,  1, {"string"}, "boolean" },
+    { "XAddButton",       (void*)XAddButton,       6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddTextField",    (void*)XAddTextField,    6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddTextArea",     (void*)XAddTextArea,     6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddComboBox",     (void*)XAddComboBox,     6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddPopupBox",     (void*)XAddPopupBox,     6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddListBox",      (void*)XAddListBox,      6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "Listbox_Add",      (void*)Listbox_Add,      2, {"string","string"}, "boolean" },
+    { "XRefresh",         (void*)XRefresh,         1, {"boolean"}, "boolean" },
+    { "Set_FontName",     (void*)SetFontName,      2, {"string","string"}, "boolean" },
+    { "Set_FontSize",     (void*)SetFontSize,      2, {"string","integer"}, "boolean" },
+    { "Listbox_RemoveAt", (void*)Listbox_RemoveAt, 2, {"string","integer"}, "boolean" },
+    { "Listbox_InsertAt", (void*)Listbox_InsertAt, 3, {"string","integer","string"}, "boolean" },
+    { "Listbox_DeleteAll",(void*)Listbox_DeleteAll,1, {"string"}, "boolean" },
     { "Listbox_GetCellTextAt", (void*)Listbox_GetCellTextAt, 3, {"string","integer","integer"}, "string" },
     { "Listbox_SetCellTextAt", (void*)Listbox_SetCellTextAt, 4, {"string","integer","integer","string"}, "string" },
     { "Set_ListBoxRowHeight", (void*)Set_ListBoxRowHeight, 2, {"string","integer"}, "boolean" },
@@ -863,10 +1243,38 @@ static PluginEntry pluginEntries[] = {
     { "ComboBox_Add",     (void*)ComboBox_Add,     2, {"string","string"}, "boolean" },
     { "Set_DropdownHeight", (void*)SetDropdownHeight, 2, {"string","integer"}, "boolean" },
     { "Set_PopupBoxSelectedIndex", (void*)SetPopupBoxSelectedIndex, 3, {"string","integer","string"}, "boolean" },
-    { "Get_PopupBoxSelectedIndex", (void*)GetPopupBoxSelectedIndex, 2, {"string","integer"}, "string" }
+    { "Get_PopupBoxSelectedIndex", (void*)GetPopupBoxSelectedIndex, 2, {"string","integer"}, "string" },
+    // New control entries:
+    { "XAddDatePicker", (void*)XAddDatePicker, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddTimePicker", (void*)XAddTimePicker, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddCalendarControl", (void*)XAddCalendarControl, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddLabel", (void*)XAddLabel, 7, {"string","string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddProgressBar", (void*)XAddProgressBar, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "ProgressBar_SetValue", (void*)ProgressBar_SetValue, 2, {"string","integer"}, "boolean" },
+    { "ProgressBar_GetValue", (void*)ProgressBar_GetValue, 1, {"string"}, "integer" },
+    { "XAddStatusBar", (void*)XAddStatusBar, 2, {"string","string"}, "boolean" },
+    { "XAddTabControl", (void*)XAddTabControl, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddHScrollBar", (void*)XAddHScrollBar, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddVScrollBar", (void*)XAddVScrollBar, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddToolTip", (void*)XAddToolTip, 2, {"string","string"}, "boolean" },
+    { "XAddUpDownControl", (void*)XAddUpDownControl, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddCheckBox", (void*)XAddCheckBox, 7, {"string","string","string","integer","integer","integer","integer"}, "boolean" },
+    { "CheckBox_SetChecked", (void*)CheckBox_SetChecked, 2, {"string","boolean"}, "boolean" },
+    { "CheckBox_GetChecked", (void*)CheckBox_GetChecked, 1, {"string"}, "boolean" },
+    { "XAddRadioButton", (void*)XAddRadioButton, 7, {"string","string","string","integer","integer","integer","integer"}, "boolean" },
+    { "RadioButton_SetChecked", (void*)RadioButton_SetChecked, 2, {"string","boolean"}, "boolean" },
+    { "RadioButton_GetChecked", (void*)RadioButton_GetChecked, 1, {"string"}, "boolean" },
+    { "XAddLine", (void*)XAddLine, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddGroupBox", (void*)XAddGroupBox, 7, {"string","string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddSlider", (void*)XAddSlider, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "Slider_SetValue", (void*)Slider_SetValue, 2, {"string","integer"}, "boolean" },
+    { "Slider_GetValue", (void*)Slider_GetValue, 1, {"string"}, "integer" },
+    { "XAddColorPicker", (void*)XAddColorPicker, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddChart", (void*)XAddChart, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddMoviePlayer", (void*)XAddMoviePlayer, 6, {"string","string","integer","integer","integer","integer"}, "boolean" },
+    { "XAddHTMLViewer", (void*)XAddHTMLViewer, 6, {"string","string","integer","integer","integer","integer"}, "boolean" }
 };
 
-// Exported function for the host (bytecode interpreter) to retrieve the plugin's function table.
 extern "C" XPLUGIN_API PluginEntry* GetPluginEntries(int* count) {
     if (count) {
         *count = sizeof(pluginEntries) / sizeof(PluginEntry);
