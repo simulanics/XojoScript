@@ -49,7 +49,9 @@ for /R %%F in (Cargo.toml) do (
     :: Move any DLL from the Rust plugin's target\release folder to the release\libs folder.
     for %%G in ("%%~dpFtarget\release\*.dll") do (
         echo Moving Rust plugin %%~nxG...
-        move /Y "%%~G" "..\release\libs\"
+		echo "%%~dpFtarget\release\*.dll"
+		echo "%%~G"
+        xcopy /Y "%~dp0target\release\*.dll" "..\release\libs\"
     )
 )
 

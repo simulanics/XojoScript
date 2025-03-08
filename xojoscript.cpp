@@ -28,7 +28,6 @@
 // -----------------------------------------------------------------------------  
 // Build: g++ -o xojoscript.exe xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto
 
-
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -47,6 +46,7 @@
 #include <random>
 #include <iomanip>
 #include <cstring>
+#include <typeinfo>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -109,6 +109,7 @@ using PropertiesType = std::vector<std::pair<std::string, struct Value>>;
 
 // ============================================================================  
 // Dynamic Value type – a wrapper around std::variant
+// Now includes pointer type (void*) for pointer variables.
 // ============================================================================
 struct Value : public std::variant<
     std::monostate,
@@ -126,7 +127,8 @@ struct Value : public std::variant<
     PropertiesType,
     std::vector<std::shared_ptr<ObjFunction>>,
     std::shared_ptr<ObjModule>,
-    std::shared_ptr<ObjEnum>  // NEW: Enum type
+    std::shared_ptr<ObjEnum>,  // NEW: Enum type
+    void*           // NEW: Pointer type
 > {
     using std::variant<
         std::monostate,
@@ -144,7 +146,8 @@ struct Value : public std::variant<
         PropertiesType,
         std::vector<std::shared_ptr<ObjFunction>>,
         std::shared_ptr<ObjModule>,
-        std::shared_ptr<ObjEnum>
+        std::shared_ptr<ObjEnum>,
+        void*
     >::variant;
 };
 
@@ -159,7 +162,10 @@ template<typename T>
 T getVal(const Value& v) {
     return std::get<T>(v);
 }
-
+template <typename T>
+std::string getTypeName(const T& var) {
+    return typeid(var).name();
+}
 // ----------------------------------------------------------------------------  
 // Helper: Convert a string to lowercase
 // ----------------------------------------------------------------------------
@@ -190,6 +196,7 @@ std::string getTypeName(const Value& v) {
         std::string operator()(const std::vector<std::shared_ptr<ObjFunction>>&) const { return "OverloadedFunctions"; }
         std::string operator()(const std::shared_ptr<ObjModule>&) const { return "ObjModule"; }
         std::string operator()(const std::shared_ptr<ObjEnum>&) const { return "ObjEnum"; }
+        std::string operator()(void* ptr) const { return "pointer"; } // NEW: Pointer type
     } visitor;
     return std::visit(visitor, v);
 }
@@ -249,6 +256,8 @@ struct ObjModule {
 };
 
 // ============================================================================  
+
+
 // valueToString – visitor for Value conversion (with trailing zero trimming to mirror Xojo)
 // ============================================================================
 std::string valueToString(const Value& val) {
@@ -283,6 +292,12 @@ std::string valueToString(const Value& val) {
         std::string operator()(const std::vector<std::shared_ptr<ObjFunction>>&) const { return "<overloaded functions>"; }
         std::string operator()(const std::shared_ptr<ObjModule>& mod) const { return "<module " + mod->name + ">"; }
         std::string operator()(const std::shared_ptr<ObjEnum>& e) const { return "<enum " + e->name + ">"; }
+        std::string operator()(void* ptr) const { 
+            if(ptr == nullptr) return "nil";
+            char buf[20];
+            std::snprintf(buf, sizeof(buf), "ptr(%p)", ptr);
+            return std::string(buf);
+        } // NEW: Pointer type
     } visitor;
     return std::visit(visitor, val);
 }
@@ -539,8 +554,6 @@ struct Environment {
 // ============================================================================  
 // Preprocessing: Remove line continuations and comments
 // ============================================================================
-// (now ignoring comment markers inside string literals) oops - my bad!
-// ============================================================================
 std::string preprocessSource(const std::string& source) {
     std::istringstream iss(source);
     std::string line, result;
@@ -553,7 +566,7 @@ std::string preprocessSource(const std::string& source) {
             if (c == '"' && (i == 0 || line[i - 1] != '\\')) {
                 inString = !inString;
             }
-            // If not inside a string literal, check for comment markers.
+           // If not inside a string literal, check for comment markers.
             if (!inString) {
                 if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
                     break; // strip from here to end of line
@@ -564,7 +577,7 @@ std::string preprocessSource(const std::string& source) {
             }
             newline.push_back(c);
         }
-        // Process line continuations (underscore at end) as before.
+        // Process line continuations (underscore at end)
         std::string trimmed = rtrim(newline);
         if (!trimmed.empty() && trimmed.back() == '_') {
             size_t endPos = trimmed.find_last_not_of(" \t_");
@@ -1229,7 +1242,7 @@ private:
             }
             else {
                 Token typeToken = consume(XTokenType::IDENTIFIER, "Expect type after 'As' in variable declaration.");
-                typeStr = typeToken.lexeme;
+                typeStr = toLower(typeToken.lexeme);
                 if (match({ XTokenType::NEW })) {
                     Token classToken = consume(XTokenType::IDENTIFIER, "Expect class name after 'New'.");
                     initializer = std::make_shared<NewExpr>(classToken.lexeme, std::vector<std::shared_ptr<Expr>>{});
@@ -1250,6 +1263,8 @@ private:
             initializer = expression();
         else if (isArray)
             initializer = std::make_shared<ArrayLiteralExpr>(std::vector<std::shared_ptr<Expr>>{});
+        else if (typeStr == "pointer" || typeStr == "ptr")
+            initializer = std::make_shared<LiteralExpr>(static_cast<void*>(nullptr)); // NEW: Initialize pointer to nullptr
         return std::make_shared<VarStmt>(name.lexeme, initializer, typeStr, isConstant, access);
     }
     // ---- Updated ifStatement to support elseif chains ----
@@ -1571,16 +1586,16 @@ typedef PluginEntry* (*GetPluginEntriesFunc)(int*);
 ffi_type* mapType(const std::string& type) {
     if (type == "string") return &ffi_type_pointer;
     else if (type == "double") return &ffi_type_double;
-	else if (type == "number") return &ffi_type_double;
-	else if (type == "void") return &ffi_type_pointer;
+    else if (type == "number") return &ffi_type_double;
+    else if (type == "void") return &ffi_type_pointer;
     else if (type == "integer") return &ffi_type_sint;
     else if (type == "int") return &ffi_type_sint;
     else if (type == "boolean") return &ffi_type_uint8;
-	else if (type == "bool") return &ffi_type_uint8;
+    else if (type == "bool") return &ffi_type_uint8;
     else if (type == "color") return &ffi_type_uint32;
     else if (type == "variant") return &ffi_type_pointer;
     else if (type == "pointer") return &ffi_type_pointer;
-	else if (type == "ptr") return &ffi_type_pointer;
+    else if (type == "ptr") return &ffi_type_pointer;
     else return nullptr;
 }
 
@@ -1609,13 +1624,14 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
     return [funcPtr, cif, arity, argTypes, paramTypes, retType, retTypeString](const std::vector<Value>& args) -> Value {
         if ((int)args.size() != arity)
             runtimeError("Plugin function expects " + std::to_string(arity) + " arguments.");
-        void** argValues = new void* [arity];
-        int intStorage[10] = { 0 };
-        double doubleStorage[10] = { 0.0 };
-        bool boolStorage[10] = { false };
-        const char* stringStorage[10] = { nullptr };
-        unsigned int uintStorage[10] = { 0 };
-        Value* variantStorage[10] = { nullptr };
+        void** argValues = new void*[arity];
+        int intStorage[10] = {0};
+        double doubleStorage[10] = {0.0};
+        bool boolStorage[10] = {false};
+        const char* stringStorage[10] = {nullptr};
+        unsigned int uintStorage[10] = {0};
+        Value* variantStorage[10] = {nullptr};
+        void* pointerStorage[10] = {nullptr}; // NEW: Storage for pointer parameters
         for (int i = 0; i < arity; i++) {
             std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
             if (pType == "string") {
@@ -1652,6 +1668,11 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
                 variantStorage[i] = new Value(args[i]);
                 argValues[i] = &variantStorage[i];
             }
+            else if (pType == "pointer" || pType == "ptr") {
+                if (!holds<void*>(args[i])) runtimeError("Plugin expects a pointer argument.");
+                pointerStorage[i] = getVal<void*>(args[i]);
+                argValues[i] = &pointerStorage[i];
+            }
             else {
                 runtimeError("Unsupported plugin parameter type: " + pType);
             }
@@ -1663,6 +1684,7 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
             const char* s;
             unsigned int ui;
             Value* variant;
+            void* p; // NEW: pointer return storage
         } resultStorage;
         ffi_call(cif, FFI_FN(funcPtr), &resultStorage, argValues);
         for (int i = 0; i < arity; i++) {
@@ -1700,11 +1722,15 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
                 return Value(std::monostate{});
             }
         }
+        else if (retTypeString == "pointer" || retTypeString == "ptr") {
+            return Value(resultStorage.p);
+        }
         else {
-            runtimeError("Unsupported plugin return type: " + retTypeString);
+            //runtimeError("Unsupported plugin return type: " + retTypeString);
+            runtimeError("Unsupported plugin return type: " + getTypeName(resultStorage));
         }
         return Value(std::monostate{});
-        };
+    };
 }
 
 // In our system, we create a helper for Declare statements that loads the plugin library
@@ -1715,13 +1741,10 @@ BuiltinFn wrapPluginFunctionForDeclare(const std::vector<Param>& params, const s
 #ifdef _WIN32
     libHandle = LoadLibraryA(libName.c_str());
     if (!libHandle) {
-        //std::cerr << "Error loading library: " << libName << std::endl;
-		debugLog("Error loading library: " + libName);
+        debugLog("Error loading library: " + libName);
         exit(1);
     }
-    //void* funcPtr = GetProcAddress((HMODULE)libHandle, apiName.c_str());
-	void* funcPtr = reinterpret_cast<void*>(GetProcAddress((HMODULE)libHandle, apiName.c_str()));
-
+    void* funcPtr = reinterpret_cast<void*>(GetProcAddress((HMODULE)libHandle, apiName.c_str()));
 #else
     libHandle = dlopen(libName.c_str(), RTLD_LAZY);
     if (!libHandle) {
@@ -1776,19 +1799,15 @@ void loadPlugins(VM& vm) {
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
-                        //std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << dllPath << std::endl;
-						debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + dllPath);
-
+                        debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + dllPath);
                     }
                 }
                 else {
-                    //std::cout << "DLL " << dllPath << " does not export GetPluginEntries." << std::endl;
-					debugLog("DLL " + dllPath + " does not export GetPluginEntries.");
+                    debugLog("DLL " + dllPath + " does not export GetPluginEntries.");
                 }
             }
             else {
-                //std::cout << "Failed to load DLL: " << dllPath << std::endl;
-				debugLog("Failed to load DLL: " + dllPath);
+                debugLog("Failed to load DLL: " + dllPath);
             }
         } while (FindNextFileA(hFind, &findData));
         FindClose(hFind);
@@ -1796,8 +1815,7 @@ void loadPlugins(VM& vm) {
 #else
     DIR* dir = opendir(libsDir.c_str());
     if (!dir) {
-        //std::cout << "Failed to open libs directory: " << libsDir << std::endl;
-		debugLog("Failed to open libs directory: " + libsDir);
+        debugLog("Failed to open libs directory: " + libsDir);
         return;
     }
     struct dirent* entry;
@@ -1821,18 +1839,15 @@ void loadPlugins(VM& vm) {
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
-                        //std::cout << "Loaded plugin function: " << entry.name << " with arity " << entry.arity << " from " << fullPath << std::endl;
-						debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + fullPath);
+                        debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + fullPath);
                     }
                 }
                 else {
-                    //std::cout << "Library " << fullPath << " does not export GetPluginEntries." << std::endl;
-					debugLog("Library " + fullPath + " does not export GetPluginEntries.");
+                    debugLog("Library " + fullPath + " does not export GetPluginEntries.");
                 }
             }
             else {
-                //std::cout << "Failed to load library: " << fullPath << std::endl;
-				debugLog("Failed to load library: " + fullPath);
+                debugLog("Failed to load library: " + fullPath);
             }
         }
     }
@@ -1857,7 +1872,7 @@ private:
     VM& vm;
     bool compilingModule; // NEW: flag indicating if compiling a module
     std::string currentModuleName; // NEW: current module name
-    std::unordered_map<std::string, Value> currentModulePublicMembers; // NEW: public members of current module
+    std::unordered_map<std::string, Value> currentModulePublicMembers;  // NEW: public members of current module
 
     void emit(ObjFunction::CodeChunk& chunk, int byte) {
         chunk.code.push_back(byte);
@@ -1950,8 +1965,12 @@ private:
                     compileExpr(std::make_shared<LiteralExpr>(false), chunk);
                 else if (varStmt->varType == "string")
                     compileExpr(std::make_shared<LiteralExpr>(std::string("")), chunk);
+                else if (varStmt->varType == "color")
+                    compileExpr(std::make_shared<LiteralExpr>(Color{ 0 }), chunk);
                 else if (varStmt->varType == "array")
                     compileExpr(std::make_shared<LiteralExpr>(Value(std::make_shared<ObjArray>())), chunk);
+                else if (varStmt->varType == "pointer" || varStmt->varType == "ptr")
+                    compileExpr(std::make_shared<LiteralExpr>(static_cast<void*>(nullptr)), chunk);
                 else
                     compileExpr(std::make_shared<LiteralExpr>(std::monostate{}), chunk);
             }
@@ -2947,7 +2966,6 @@ int main(int argc, char* argv[]) {
 
     // Print DEBUG_MODE status for verification
     debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF")); //Should only ever show ON since OFF should display no debug info.
-	//std::cout << "DEBUG_MODE: " << (DEBUG_MODE ? "ON" : "OFF") << std::endl;
 
 ////////////////////////Drop-in//////////////////////////////////
 
@@ -2970,7 +2988,6 @@ int main(int argc, char* argv[]) {
         if (args.size() < 1) runtimeError("str expects an argument.");
         return Value(valueToString(args[0]));
         }));
-    // The following built-ins remain defined as in the original code.
     vm.environment->define("microseconds", std::string("microseconds"));
     vm.environment->define("ticks", std::string("ticks"));
     vm.environment->define("val", BuiltinFn([](const std::vector<Value>& args) -> Value {
@@ -3149,7 +3166,7 @@ int main(int argc, char* argv[]) {
     loadPlugins(vm);
 	
 	////////////////////////////////////////////////
-	std::ifstream file(filename);
+    std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Error: Unable to open " << filename << std::endl;
         return EXIT_FAILURE;
@@ -3204,6 +3221,7 @@ int main(int argc, char* argv[]) {
     debugLog("Program execution finished.");
     return 0;
 }
+
 
 
 //////////////////////////////////////////

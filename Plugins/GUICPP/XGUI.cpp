@@ -3,6 +3,7 @@
 // Build (Windows):
 //   windres -O coff -i XGUI.rc -o XGUI.res
 //   g++ -shared -o XGUI.dll XGUI.cpp XGUI.res -mwindows -Wl,--subsystem,windows -luxtheme -lcomctl32 -ldwmapi
+//   g++ -shared -o XGUI.dll GUIPlugin.cpp XGUI.res -mwindows -Wl,--subsystem,windows -luxtheme -lcomctl32 -ldwmapi -lole32
 // Build (macOS/Linux):
 //   g++ -shared -fPIC -o XGUI.so XGUI.cpp $(pkg-config --cflags --libs gtk+-3.0)
 
@@ -16,9 +17,9 @@
 #include <sstream>
 #include <cwchar>
 
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+/*#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
+#endif*/
 
 #ifdef _WIN32
 #include <windows.h>

@@ -2,7 +2,7 @@
 
 ' Create a larger main window to accommodate all controls.
 var b as Boolean 
-b = XCreateWindow("MainWin", 300, 300, 1400, 900, True, True, True)
+b = XCreateWindow("MainWin", 300, 300, 1200, 900, True, True, True)
 
 if b = true then
 
@@ -15,6 +15,7 @@ if b = true then
     Set_FontName("MyListBox", "Calibri")
     Set_FontSize("MyListBox", 16)
     Set_ListBoxRowHeight("MyListBox", 30)
+	
     For astr as integer = 0 to 19
         var itemText as String 
         itemText = "This is item " + str(astr)
@@ -43,15 +44,22 @@ if b = true then
     Set_FontSize("MyButton", 12)
     
     XAddDatePicker("MyDate", "MainWin", 320, 60, 200, 30)
+	Set_FontName("MyDate", "Calibri")
+    Set_FontSize("MyDate", 18)
+	
     XAddTimePicker("MyTime", "MainWin", 320, 100, 200, 30)
+	Set_FontName("MyTime", "Calibri")
+    Set_FontSize("MyTime", 18)
     
-    XAddCalendarControl("MyCalendar", "MainWin", 320, 140, 300, 200)
+    XAddCalendarControl("MyCalendar", "MainWin", 320, 140, 185, 165)
     
-    XAddLabel("MyLabel", "MainWin", "Hello, World!", 320, 350, 200, 30)
+    XAddLabel("MyLabel", "MainWin", "Hello, World! <3", 320, 340, 300, 42)
+	Set_FontName("MyLabel", "Curlz MT")
+    Set_FontSize("MyLabel", 30)
     
     XAddProgressBar("MyProgress", "MainWin", 320, 390, 300, 25)
-    ProgressBar_SetValue("MyProgress", 50)
-    print("Progress value: " + str(ProgressBar_GetValue("MyProgress")))
+    //ProgressBar_SetValue("MyProgress", 50)
+    //print("Progress value: " + str(ProgressBar_GetValue("MyProgress")))
     
     XAddTabControl("MyTabs", "MainWin", 320, 430, 300, 200)
     
@@ -60,28 +68,35 @@ if b = true then
     
     XAddUpDownControl("MyUpDown", "MainWin", 320, 670, 50, 25)
     
-    ' Right Column (x ≈ 650)
-    XAddCheckBox("MyCheckBox", "MainWin", "Check Me", 650, 8, 150, 30)
+    ' Right Column (x ≈ 660)
+    XAddCheckBox("MyCheckBox", "MainWin", "Check Me", 660, 8, 150, 30)
+	Set_FontName("MyCheckBox", "Calibri")
+    Set_FontSize("MyCheckBox", 14)
     CheckBox_SetChecked("MyCheckBox", true)
     
-    XAddRadioButton("MyRadio1", "MainWin", "Option 1", 650, 50, 150, 30)
+    XAddRadioButton("MyRadio1", "MainWin", "Option 1", 660, 50, 150, 30)
+		Set_FontName("MyRadio1", "Calibri")
+		Set_FontSize("MyRadio1", 14)
     XAddRadioButton("MyRadio2", "MainWin", "Option 2", 810, 50, 150, 30)
+		Set_FontName("MyRadio2", "Calibri")
+		Set_FontSize("MyRadio2", 14)
     RadioButton_SetChecked("MyRadio1", true)
     
-    XAddLine("MyLine", "MainWin", 650, 90, 500, 2)
     
-    XAddGroupBox("MyGroup", "MainWin", "Group Box", 650, 100, 500, 150)
+    XAddGroupBox("MyGroup", "MainWin", "Group Box", 660, 100, 500, 150)
+	XAddLine("MyLine", "MyGroup", 10, 60, 480, 0)
     
-    XAddSlider("MySlider", "MainWin", 650, 260, 500, 40)
+    XAddSlider("MySlider", "MainWin", 660, 260, 500, 40)
     Slider_SetValue("MySlider", 75)
     
-    XAddColorPicker("MyColorPicker", "MainWin", 650, 310, 200, 40)
+    XAddColorPicker("MyColorPicker", "MainWin", 660, 310, 200, 40)
     
-    XAddChart("MyChart", "MainWin", 650, 360, 500, 200)
+    XAddChart("MyChart", "MainWin", 660, 360, 500, 200)
     
-    XAddMoviePlayer("MyMovie", "MainWin", 650, 570, 500, 200)
+	//Current: Incomplete control thread creation in plugin - will hard-crash the app but not pose or cause any system/memory leak.
+    'XAddMoviePlayer("MyMovie", "MainWin", 660, 570, 500, 200)
     
-    XAddHTMLViewer("MyHTML", "MainWin", 650, 780, 500, 100)
+    XAddHTMLViewer("MyHTML", "MainWin", 660, 570, 500, 250)
     
     ' Status Bar (docked automatically at bottom)
     XAddStatusBar("MyStatus", "MainWin")
@@ -91,6 +106,15 @@ if b = true then
 
 end if
 
+var progress as Integer = 0
+
 while true
+	progress = progress + 1
+	ProgressBar_SetValue("MyProgress", progress)
+    print("Progress value: " + str(ProgressBar_GetValue("MyProgress")))
+	if progress = 100 then
+	   progress = -1
+	end if
     DoEvents()
+	Sleep(50)
 wend

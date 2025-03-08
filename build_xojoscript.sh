@@ -16,5 +16,8 @@ mkdir -p release
 # Move the compiled executable to the release directory
 mv -f xojoscript release/
 
+# Copy the Scripts folder to the release directory
+cp -r Scripts release/
+
 echo "XojoScript Built Successfully."
 exit 0

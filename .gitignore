@@ -23,3 +23,5 @@ error.log
 Plugins/Speak/Cargo.lock
 Plugins/GUICPP/XGUI.dll.manifest
 Plugins/GUICPP/XGUI.dll.manifest
+Plugins/GUICPP/XGUI-hold.cpp
+Plugins/GUICPP/XGUI.cpp-new

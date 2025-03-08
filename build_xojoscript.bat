@@ -9,7 +9,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Compile xojoscript.cpp with metadata
-g++ -o xojoscript.exe xojoscript.cpp xojoscript.res -lffi -O3 -march=native -mtune=native -flto 2> error.log
+g++ -o xojoscript.exe xojoscript.cpp xojoscript.res -lffi -O3 -march=native -mtune=native 2> error.log
 
 :: Check if compilation was successful
 if %ERRORLEVEL% NEQ 0 (
@@ -23,6 +23,9 @@ if not exist release mkdir release
 
 :: Move the compiled executable to the release directory
 move /Y xojoscript.exe release\
+
+:: Copy the Scripts folder to the release directory
+xcopy /E /I /Y Scripts release\Scripts
 
 echo XojoScript Built Successfully.
 exit /b 0
