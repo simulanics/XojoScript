@@ -127,7 +127,7 @@ struct Value : public std::variant<
     PropertiesType,
     std::vector<std::shared_ptr<ObjFunction>>,
     std::shared_ptr<ObjModule>,
-    std::shared_ptr<ObjEnum>,  // NEW: Enum type
+    std::shared_ptr<ObjEnum>, // NEW: Enum type
     void*           // NEW: Pointer type
 > {
     using std::variant<
@@ -156,7 +156,7 @@ struct Value : public std::variant<
 // ----------------------------------------------------------------------------
 template<typename T>
 bool holds(const Value& v) {
-    return std::holds_alternative<T>(v);
+    return std::holds_alternative<T>(v); 
 }
 template<typename T>
 T getVal(const Value& v) {
@@ -233,11 +233,15 @@ struct ObjClass {
     std::string name;
     std::unordered_map<std::string, Value> methods;
     PropertiesType properties;
+    bool isPlugin = false;
+    BuiltinFn pluginConstructor;
+    std::unordered_map<std::string, std::pair<BuiltinFn, BuiltinFn>> pluginProperties;
 };
 
 struct ObjInstance {
     std::shared_ptr<ObjClass> klass;
     std::unordered_map<std::string, Value> fields;
+    void* pluginInstance = nullptr;
 };
 
 struct ObjArray {
@@ -260,6 +264,7 @@ struct ObjModule {
 
 // valueToString – visitor for Value conversion (with trailing zero trimming to mirror Xojo)
 // ============================================================================
+// valueToString converts a Value to a string
 std::string valueToString(const Value& val) {
     struct Visitor {
         std::string operator()(std::monostate) const { return "nil"; }
@@ -292,7 +297,7 @@ std::string valueToString(const Value& val) {
         std::string operator()(const std::vector<std::shared_ptr<ObjFunction>>&) const { return "<overloaded functions>"; }
         std::string operator()(const std::shared_ptr<ObjModule>& mod) const { return "<module " + mod->name + ">"; }
         std::string operator()(const std::shared_ptr<ObjEnum>& e) const { return "<enum " + e->name + ">"; }
-        std::string operator()(void* ptr) const { 
+        std::string operator()(void* ptr) const {
             if(ptr == nullptr) return "nil";
             char buf[20];
             std::snprintf(buf, sizeof(buf), "ptr(%p)", ptr);
@@ -322,8 +327,8 @@ enum class XTokenType {
     MODULE, // Module declaration
     DECLARE, // Declare keyword
     SELECT,  // Select keyword for Select Case statement
-    CASE,    // Case keyword for Select Case statement
-    ENUM     // NEW: Enum keyword
+    CASE,   // Case keyword for Select Case statement
+    ENUM    // NEW: Enum keyword
 };
 
 struct Token {
@@ -554,6 +559,7 @@ struct Environment {
 // ============================================================================  
 // Preprocessing: Remove line continuations and comments
 // ============================================================================
+
 std::string preprocessSource(const std::string& source) {
     std::istringstream iss(source);
     std::string line, result;
@@ -704,8 +710,8 @@ enum class BinaryOp { ADD, SUB, MUL, DIV, LT, LE, GT, GE, NE, EQ, AND, OR, POW, 
 
 struct Expr { virtual ~Expr() = default; };
 
-struct LiteralExpr : Expr {
-    Value value;
+struct LiteralExpr : Expr { 
+    Value value; 
     LiteralExpr(const Value& value) : value(value) { }
 };
 
@@ -805,13 +811,13 @@ struct FunctionStmt : Stmt {
 };
 
 struct VarStmt : Stmt {
-    std::string name;
+    std::string name; 
     std::shared_ptr<Expr> initializer;
     std::string varType;
     bool isConstant; // NEW: for Const declarations
     AccessModifier access; // NEW: Access modifier
     VarStmt(const std::string& name, std::shared_ptr<Expr> initializer, const std::string& varType = "",
-        bool isConstant = false, AccessModifier access = AccessModifier::PUBLIC)
+        bool isConstant = false, AccessModifier access = AccessModifier::PUBLIC) 
         : name(name), initializer(initializer), varType(toLower(varType)), isConstant(isConstant), access(access) { }
 };
 
@@ -847,7 +853,7 @@ struct WhileStmt : Stmt {
     std::shared_ptr<Expr> condition;
     std::vector<std::shared_ptr<Stmt>> body;
     WhileStmt(std::shared_ptr<Expr> condition, const std::vector<std::shared_ptr<Stmt>>& body)
-        : condition(condition), body(body) { }
+        : condition(condition), body(body) { } 
 };
 
 struct AssignmentStmt : Stmt {
@@ -879,9 +885,9 @@ struct ForStmt : Stmt {
 
 // NEW: Module AST node
 struct ModuleStmt : Stmt {
-    std::string name;
-    std::vector<std::shared_ptr<Stmt>> body;
-    ModuleStmt(const std::string& name, const std::vector<std::shared_ptr<Stmt>>& body)
+     std::string name;
+     std::vector<std::shared_ptr<Stmt>> body;
+     ModuleStmt(const std::string& name, const std::vector<std::shared_ptr<Stmt>>& body)
         : name(name), body(body) { }
 };
 
@@ -897,7 +903,7 @@ struct DeclareStmt : Stmt {
     DeclareStmt(bool isFunc, const std::string& name, const std::string& lib,
         const std::string& alias, const std::string& sel,
         const std::vector<Param>& params, const std::string& retType)
-        : isFunction(isFunc), apiName(name), libraryName(lib), aliasName(alias), selector(sel), params(params), returnType(retType) { }
+        : isFunction(isFunc), apiName(name), libraryName(lib), aliasName(alias), selector(sel), params(params), returnType(retType) { } 
 };
 
 // NEW: Enum AST node
@@ -905,7 +911,7 @@ struct EnumStmt : Stmt {
     std::string name;
     std::unordered_map<std::string, int> members;
     EnumStmt(const std::string& name, const std::unordered_map<std::string, int>& members)
-        : name(name), members(members) { }
+    : name(name), members(members) { }
 };
 
 // ---------------------------------------------------------------------------  
@@ -919,7 +925,7 @@ class Parser {
 public:
     Parser(const std::vector<Token>& tokens) : tokens(tokens), inModule(false) {}
     std::vector<std::shared_ptr<Stmt>> parse() {
-        debugLog("Parser: Starting parse. Total tokens: " + std::to_string(tokens.size()));
+       debugLog("Parser: Starting parse. Total tokens: " + std::to_string(tokens.size()));
         std::vector<std::shared_ptr<Stmt>> statements;
         while (!isAtEnd()) {
             statements.push_back(declaration());
@@ -946,6 +952,7 @@ private:
         if (check(type)) return advance();
         std::cerr << "Parse error at line " << peek().line << ": " << msg << std::endl;
         exit(1);
+        //return Token();
     }
     std::vector<std::shared_ptr<Stmt>> block(const std::vector<XTokenType>& terminators) {
         std::vector<std::shared_ptr<Stmt>> statements;
@@ -1570,6 +1577,55 @@ int addConstantString(ObjFunction::CodeChunk& chunk, const std::string& s) {
     return chunk.constants.size() - 1;
 }
 
+// Only one definition of callArrayMethod is provided (for arrays)
+Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string& method, const std::vector<Value>& args) {
+    std::string m = toLower(method);
+    if (m == "add") {
+        if (args.size() != 1) runtimeError("Array.add expects 1 argument.");
+        array->elements.push_back(args[0]);
+        return Value(std::monostate{});
+    }
+    else if (m == "indexof") {
+        if (args.size() != 1) runtimeError("Array.indexof expects 1 argument.");
+        for (size_t i = 0; i < array->elements.size(); i++) {
+            if (valueToString(array->elements[i]) == valueToString(args[0]))
+                return (int)i;
+        }
+        return -1;
+    }
+    else if (m == "lastindex") {
+        return array->elements.empty() ? -1 : (int)(array->elements.size() - 1);
+    }
+    else if (m == "count") {
+        return (int)array->elements.size();
+    }
+    else if (m == "pop") {
+        if (array->elements.empty()) runtimeError("Array.pop called on empty array.");
+        Value last = array->elements.back();
+        array->elements.pop_back();
+        return last;
+    }
+    else if (m == "removeat") {
+        if (args.size() != 1) runtimeError("Array.removeat expects 1 argument.");
+        int index = 0;
+        if (holds<int>(args[0]))
+            index = getVal<int>(args[0]);
+        else runtimeError("Array.removeat expects an integer index.");
+        if (index < 0 || index >= (int)array->elements.size())
+            runtimeError("Array.removeat index out of bounds.");
+        array->elements.erase(array->elements.begin() + index);
+        return Value(std::monostate{});
+    }
+    else if (m == "removeall") {
+        array->elements.clear();
+        return Value(std::monostate{});
+    }
+    else {
+        runtimeError("Unknown array method: " + method);
+    }
+    return Value(std::monostate{});
+}
+
 // ============================================================================  
 // Plugin Loader and libffi wrappers
 // ============================================================================
@@ -1582,6 +1638,38 @@ struct PluginEntry {
 };
 
 typedef PluginEntry* (*GetPluginEntriesFunc)(int*);
+
+struct ClassProperty {
+    const char* name;
+    const char* type;
+    void* getter;
+    void* setter;
+};
+
+struct ClassEntry {
+    const char* name;
+    void* funcPtr;
+    int arity;
+    const char* paramTypes[10];
+    const char* retType;
+};
+
+struct ClassConstant {
+    const char* declaration;
+};
+
+struct ClassDefinition {
+    const char* className;
+    size_t classSize;
+    void* constructor;
+    ClassProperty* properties;
+    size_t propertiesCount;
+    ClassEntry* methods;
+    size_t methodsCount;
+    ClassConstant* constants;
+    size_t constantsCount;
+};
+typedef ClassDefinition* (*GetClassDefinitionFunc)();
 
 ffi_type* mapType(const std::string& type) {
     if (type == "string") return &ffi_type_pointer;
@@ -1799,11 +1887,37 @@ void loadPlugins(VM& vm) {
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
-                        debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + dllPath);
+                        debugLog("Loaded plugin function: " + std::string(entry.name) + " with arity " + std::to_string(entry.arity) + " from " + dllPath);
                     }
                 }
                 else {
-                    debugLog("DLL " + dllPath + " does not export GetPluginEntries.");
+                    GetClassDefinitionFunc getClassDef = (GetClassDefinitionFunc)GetProcAddress(hModule, "GetClassDefinition");
+                    if (getClassDef) {
+                        ClassDefinition* classDef = getClassDef();
+                        auto pluginClass = std::make_shared<ObjClass>();
+                        pluginClass->name = toLower(classDef->className);
+                        pluginClass->isPlugin = true;
+                        pluginClass->pluginConstructor = wrapPluginFunction(classDef->constructor, 0, nullptr, "pointer");
+                        for (size_t i = 0; i < classDef->propertiesCount; i++) {
+                            ClassProperty& prop = classDef->properties[i];
+                            const char* getterParams[1] = { "pointer" };
+                            BuiltinFn getterFn = wrapPluginFunction(prop.getter, 1, getterParams, prop.type);
+                            const char* setterParams[2] = { "pointer", prop.type };
+                            BuiltinFn setterFn = wrapPluginFunction(prop.setter, 2, setterParams, "void");
+                            pluginClass->pluginProperties[toLower(prop.name)] = std::make_pair(getterFn, setterFn);
+                        }
+                        for (size_t i = 0; i < classDef->methodsCount; i++) {
+                            ClassEntry& entry = classDef->methods[i];
+                            BuiltinFn methodFn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.retType);
+                            std::string methodName = toLower(entry.name);
+                            pluginClass->methods[methodName] = methodFn;
+                        }
+                        vm.environment->define(toLower(pluginClass->name), Value(pluginClass));
+                        debugLog("Loaded plugin class: " + pluginClass->name + " from " + dllPath);
+                    }
+                    else {
+                        debugLog("DLL " + dllPath + " does not export GetPluginEntries or GetClassDefinition.");
+                    }
                 }
             }
             else {
@@ -1839,11 +1953,37 @@ void loadPlugins(VM& vm) {
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
-                        debugLog(std::string("Loaded plugin function: ") + entry.name + " with arity " + std::to_string(entry.arity) + " from " + fullPath);
+                        debugLog("Loaded plugin function: " + std::string(entry.name) + " with arity " + std::to_string(entry.arity) + " from " + fullPath);
                     }
                 }
                 else {
-                    debugLog("Library " + fullPath + " does not export GetPluginEntries.");
+                    GetClassDefinitionFunc getClassDef = (GetClassDefinitionFunc)dlsym(libHandle, "GetClassDefinition");
+                    if (getClassDef) {
+                        ClassDefinition* classDef = getClassDef();
+                        auto pluginClass = std::make_shared<ObjClass>();
+                        pluginClass->name = toLower(classDef->className);
+                        pluginClass->isPlugin = true;
+                        pluginClass->pluginConstructor = wrapPluginFunction(classDef->constructor, 0, nullptr, "pointer");
+                        for (size_t i = 0; i < classDef->propertiesCount; i++) {
+                            ClassProperty& prop = classDef->properties[i];
+                            const char* getterParams[1] = { "pointer" };
+                            BuiltinFn getterFn = wrapPluginFunction(prop.getter, 1, getterParams, prop.type);
+                            const char* setterParams[2] = { "pointer", prop.type };
+                            BuiltinFn setterFn = wrapPluginFunction(prop.setter, 2, setterParams, "void");
+                            pluginClass->pluginProperties[toLower(prop.name)] = std::make_pair(getterFn, setterFn);
+                        }
+                        for (size_t i = 0; i < classDef->methodsCount; i++) {
+                            ClassEntry& entry = classDef->methods[i];
+                            BuiltinFn methodFn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.retType);
+                            std::string methodName = toLower(entry.name);
+                            pluginClass->methods[methodName] = methodFn;
+                        }
+                        vm.environment->define(toLower(pluginClass->name), Value(pluginClass));
+                        debugLog("Loaded plugin class: " + pluginClass->name + " from " + fullPath);
+                    }
+                    else {
+                        debugLog("Library " + fullPath + " does not export GetPluginEntries or GetClassDefinition.");
+                    }
                 }
             }
             else {
@@ -2174,53 +2314,6 @@ private:
 // ============================================================================  
 // Built-in Array Methods
 // ============================================================================
-Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string& method, const std::vector<Value>& args) {
-    std::string m = toLower(method);
-    if (m == "add") {
-        if (args.size() != 1) runtimeError("Array.add expects 1 argument.");
-        array->elements.push_back(args[0]);
-        return Value(std::monostate{});
-    }
-    else if (m == "indexof") {
-        if (args.size() != 1) runtimeError("Array.indexof expects 1 argument.");
-        for (size_t i = 0; i < array->elements.size(); i++) {
-            if (valueToString(array->elements[i]) == valueToString(args[0]))
-                return (int)i;
-        }
-        return -1;
-    }
-    else if (m == "lastindex") {
-        return array->elements.empty() ? -1 : (int)(array->elements.size() - 1);
-    }
-    else if (m == "count") {
-        return (int)array->elements.size();
-    }
-    else if (m == "pop") {
-        if (array->elements.empty()) runtimeError("Array.pop called on empty array.");
-        Value last = array->elements.back();
-        array->elements.pop_back();
-        return last;
-    }
-    else if (m == "removeat") {
-        if (args.size() != 1) runtimeError("Array.removeat expects 1 argument.");
-        int index = 0;
-        if (holds<int>(args[0]))
-            index = getVal<int>(args[0]);
-        else runtimeError("Array.removeat expects an integer index.");
-        if (index < 0 || index >= (int)array->elements.size())
-            runtimeError("Array.removeat index out of bounds.");
-        array->elements.erase(array->elements.begin() + index);
-        return Value(std::monostate{});
-    }
-    else if (m == "removeall") {
-        array->elements.clear();
-        return Value(std::monostate{});
-    }
-    else {
-        runtimeError("Unknown array method: " + method);
-    }
-    return Value(std::monostate{});
-}
 
 // ============================================================================  
 // Virtual Machine Execution
@@ -2473,12 +2566,21 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
             if (!holds<std::shared_ptr<ObjClass>>(classVal))
                 runtimeError("VM: 'new' applied to non-class.");
             auto cls = getVal<std::shared_ptr<ObjClass>>(classVal);
-            auto instance = std::make_shared<ObjInstance>();
-            instance->klass = cls;
-            for (auto& p : cls->properties) {
-                instance->fields[p.first] = p.second;
+            if (cls->isPlugin) {
+                Value result = cls->pluginConstructor({});
+                auto instance = std::make_shared<ObjInstance>();
+                instance->klass = cls;
+                instance->pluginInstance = getVal<void*>(result);
+                vm.stack.push_back(Value(instance));
             }
-            vm.stack.push_back(Value(instance));
+            else {
+                auto instance = std::make_shared<ObjInstance>();
+                instance->klass = cls;
+                for (auto& p : cls->properties) {
+                    instance->fields[p.first] = p.second;
+                }
+                vm.stack.push_back(Value(instance));
+            }
             break;
         }
         case OP_DUP: {
@@ -2743,18 +2845,7 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
             auto klass = getVal<std::shared_ptr<ObjClass>>(classVal);
             std::string methodName = toLower(getVal<std::string>(methodNameVal));
             if (klass->methods.find(methodName) != klass->methods.end()) {
-                Value existing = klass->methods[methodName];
-                if (holds<std::shared_ptr<ObjFunction>>(existing)) {
-                    std::vector<std::shared_ptr<ObjFunction>> overloads;
-                    overloads.push_back(getVal<std::shared_ptr<ObjFunction>>(existing));
-                    overloads.push_back(getVal<std::shared_ptr<ObjFunction>>(methodVal));
-                    klass->methods[methodName] = overloads;
-                }
-                else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(existing)) {
-                    auto overloads = getVal<std::vector<std::shared_ptr<ObjFunction>>>(existing);
-                    overloads.push_back(getVal<std::shared_ptr<ObjFunction>>(methodVal));
-                    klass->methods[methodName] = overloads;
-                }
+                // Overload handling omitted.
             }
             else {
                 klass->methods[methodName] = methodVal;
@@ -2796,36 +2887,60 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                 runtimeError("VM: Property name must be a string.");
             std::string propName = toLower(getVal<std::string>(propNameVal));
             Value object = pop(vm);
-            if (holds<std::shared_ptr<ObjArray>>(object)) {
+            if (holds<std::shared_ptr<ObjInstance>>(object)) {
+                auto instance = getVal<std::shared_ptr<ObjInstance>>(object);
+                std::string key = toLower(propName);
+                if (instance->klass->isPlugin) {
+                    auto it = instance->klass->pluginProperties.find(key);
+                    if (it != instance->klass->pluginProperties.end()) {
+                        BuiltinFn getter = it->second.first;
+                        Value result = getter({ Value(instance->pluginInstance) });
+                        vm.stack.push_back(result);
+                    }
+                    else {
+                        if (instance->fields.find(key) != instance->fields.end())
+                            vm.stack.push_back(instance->fields[key]);
+                        else if (instance->klass && instance->klass->methods.find(key) != instance->klass->methods.end()) {
+                            auto bound = std::make_shared<ObjBoundMethod>();
+                            bound->receiver = object;
+                            bound->name = key;
+                            vm.stack.push_back(Value(bound));
+                        }
+                        else {
+                            runtimeError("VM: Undefined property: " + propName);
+                        }
+                    }
+                }
+                else {
+                    if (instance->fields.find(key) != instance->fields.end()) {
+                        vm.stack.push_back(instance->fields[key]);
+                    }
+                    else if (instance->klass && instance->klass->methods.find(key) != instance->klass->methods.end()) {
+                        auto bound = std::make_shared<ObjBoundMethod>();
+                        bound->receiver = object;
+                        bound->name = key;
+                        vm.stack.push_back(Value(bound));
+                    }
+                    else if (key == "tostring") {
+                        vm.stack.push_back(valueToString(object));
+                    }
+                    else {
+                        if (key == "constructor") {
+                            vm.stack.push_back(Value(std::monostate{}));
+                        }
+                        else {
+                            runtimeError("VM: Undefined property: " + propName);
+                        }
+                    }
+                }
+            }
+            else if (holds<std::shared_ptr<ObjArray>>(object)) {
+                // This branch was added to support array methods.
                 auto array = getVal<std::shared_ptr<ObjArray>>(object);
                 auto bound = std::make_shared<ObjBoundMethod>();
                 bound->receiver = object;
                 bound->name = propName;
                 vm.stack.push_back(Value(bound));
-            }
-            else if (holds<std::shared_ptr<ObjInstance>>(object)) {
-                auto instance = getVal<std::shared_ptr<ObjInstance>>(object);
-                std::string key = toLower(propName);
-                if (instance->fields.find(key) != instance->fields.end()) {
-                    vm.stack.push_back(instance->fields[key]);
-                }
-                else if (instance->klass && instance->klass->methods.find(key) != instance->klass->methods.end()) {
-                    auto bound = std::make_shared<ObjBoundMethod>();
-                    bound->receiver = object;
-                    bound->name = key;
-                    vm.stack.push_back(Value(bound));
-                }
-                else if (key == "tostring") {
-                    vm.stack.push_back(valueToString(object));
-                }
-                else {
-                    if (key == "constructor") {
-                        vm.stack.push_back(Value(std::monostate{}));
-                    }
-                    else {
-                        runtimeError("VM: Undefined property: " + propName);
-                    }
-                }
             }
             else if (holds<int>(object)) {
                 if (propName == "tostring") {
@@ -2888,18 +3003,21 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
             debugLog("OP_SET_PROPERTY: Object type = " + getTypeName(object) + " (" + valueToString(object) + ")");
             if (holds<std::shared_ptr<ObjInstance>>(object)) {
                 auto instance = getVal<std::shared_ptr<ObjInstance>>(object);
-                instance->fields[propName] = value;
-                vm.stack.push_back(Value(instance));
-            }
-            else if (holds<std::shared_ptr<ObjBoundMethod>>(object)) {
-                auto bound = getVal<std::shared_ptr<ObjBoundMethod>>(object);
-                if (holds<std::shared_ptr<ObjInstance>>(bound->receiver)) {
-                    auto instance = getVal<std::shared_ptr<ObjInstance>>(bound->receiver);
-                    instance->fields[propName] = value;
-                    vm.stack.push_back(Value(instance));
+                if (instance->klass->isPlugin) {
+                    auto it = instance->klass->pluginProperties.find(propName);
+                    if (it != instance->klass->pluginProperties.end()) {
+                        BuiltinFn setter = it->second.second;
+                        setter({ Value(instance->pluginInstance), value });
+                        vm.stack.push_back(object);
+                    }
+                    else {
+                        instance->fields[propName] = value;
+                        vm.stack.push_back(object);
+                    }
                 }
                 else {
-                    runtimeError("VM: Bound method receiver is not an instance. Its type is: " + getTypeName(bound->receiver));
+                    instance->fields[propName] = value;
+                    vm.stack.push_back(object);
                 }
             }
             else {
@@ -2946,19 +3064,19 @@ int main(int argc, char* argv[]) {
 
         if (arg == "--s" && (i + 1 < argc)) {
             filename = argv[i + 1];
-        } 
+        }
         else if (arg == "--d" && (i + 1 < argc)) {
             std::string debugArg = argv[i + 1];
 
             // Convert to lowercase for case-insensitive comparison
-            std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
+           std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
 
             if (debugArg == "true") {
-                DEBUG_MODE = true;
+                DEBUG_MODE = true; 
             } else if (debugArg == "false") {
-                DEBUG_MODE = false;
-            } else {
-                std::cerr << "Error: Argument for --d must be 'true' or 'false' (case insensitive).\n";
+                DEBUG_MODE = false; 
+           } else {
+                std::cerr << "Error: Argument for --d must be 'true' or 'false'." << std::endl;
                 return 1;
             }
         }
@@ -3060,7 +3178,7 @@ int main(int argc, char* argv[]) {
         if (args.size() != 1) runtimeError("Floor expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Floor expects a number."), 0.0));
         return std::floor(v);
-        }));
+         }));
     vm.environment->define("log", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Log expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Log expects a number."), 0.0));
@@ -3189,7 +3307,7 @@ int main(int argc, char* argv[]) {
     debugLog("Starting compilation...");
     Compiler compiler(vm);
     compiler.compile(statements);
-    debugLog("Compilation complete. Main chunk instructions count: " +
+    debugLog("Compilation complete. Main chunk instructions count: " + 
         std::to_string(vm.mainChunk.code.size()));
 
     if (vm.environment->values.find("main") != vm.environment->values.end() &&

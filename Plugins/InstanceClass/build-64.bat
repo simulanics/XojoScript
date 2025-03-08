@@ -1,0 +1,1 @@
+g++ -shared -m64 -o InstanceClassDemo.dll InstanceClassDemo.cpp -static-libgcc -static-libstdc++

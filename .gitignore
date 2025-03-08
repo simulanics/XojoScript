@@ -25,3 +25,7 @@ Plugins/GUICPP/XGUI.dll.manifest
 Plugins/GUICPP/XGUI.dll.manifest
 Plugins/GUICPP/XGUI-hold.cpp
 Plugins/GUICPP/XGUI.cpp-new
+xclass2.cxx
+xojoscript.cpp-nope
+xojoscriptorig.cpp
+/release-64
