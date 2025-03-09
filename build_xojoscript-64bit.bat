@@ -24,6 +24,10 @@ if not exist release-64 mkdir release-64
 :: Move the compiled executable to the release directory
 move /Y xojoscript.exe release-64\
 
+:: Dump DLL dependencies using objdump
+echo DLL dependencies:
+objdump -p release-64\xojoscript.exe | findstr /R "DLL"
+
 :: Copy the Scripts folder to the release directory
 xcopy /E /I /Y Scripts release-64\Scripts
 

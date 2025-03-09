@@ -16,6 +16,17 @@ mkdir -p release-64
 # Move the compiled executable to the release directory
 mv -f xojoscript release-64/
 
+# Dump shared library dependencies based on OS
+if [[ "$(uname)" == "Darwin" ]]; then
+    echo "Dylib dependencies:"
+    otool -L release-64/xojoscript
+elif [[ "$(uname)" == "Linux" ]]; then
+    echo "Shared library dependencies:"
+    ldd release-64/xojoscript
+else
+    echo "Unsupported OS"
+fi
+
 # Copy the Scripts folder to the release directory
 cp -r Scripts release-64/
 
