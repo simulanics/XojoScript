@@ -9,7 +9,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Compile xojoscript.cpp with metadata (32-bit)
-g++ -o xojoscript.exe xojoscript.cpp xojoscript.res -lffi -O3 -march=native -mtune=native 2> error.log
+g++ -static -o xojoscript.exe xojoscript.cpp xojoscript.res -lffi -O3 -march=native -mtune=native 2> error.log
 
 :: Check if compilation was successful
 if %ERRORLEVEL% NEQ 0 (

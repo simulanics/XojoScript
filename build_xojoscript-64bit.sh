@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Compile xojoscript.cpp using g++
-g++ -o xojoscript xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto -m64 2> error.log
+g++ -static -o xojoscript xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto -m64 2> error.log
 
 # Check if compilation was successful
 if [ $? -ne 0 ]; then
