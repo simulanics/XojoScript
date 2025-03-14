@@ -47,6 +47,7 @@
 #include <iomanip>
 #include <cstring>
 #include <typeinfo>
+#include <cstdint>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -69,6 +70,7 @@ std::chrono::steady_clock::time_point startTime;
 
 // ---------------------------------------------------------------------------  
 // Global random engine used by built-in rnd (and random class)
+//TODO: Make RNG thread-safe when multithreaded support is added - currently bound to main App thread as in Xojo's implementation.
 std::mt19937 global_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
 // ============================================================================  
@@ -111,6 +113,9 @@ using PropertiesType = std::vector<std::pair<std::string, struct Value>>;
 // Dynamic Value type – a wrapper around std::variant
 // Now includes pointer type (void*) for pointer variables.
 // ============================================================================
+// By Design - Not a duplication mistake: The duplicate "using" declaration 
+// inherits std::variant's constructors so Value can be directly constructed 
+// from any of its alternatives.
 struct Value : public std::variant<
     std::monostate,
     int,
@@ -127,8 +132,8 @@ struct Value : public std::variant<
     PropertiesType,
     std::vector<std::shared_ptr<ObjFunction>>,
     std::shared_ptr<ObjModule>,
-    std::shared_ptr<ObjEnum>, // NEW: Enum type
-    void*           // NEW: Pointer type
+    std::shared_ptr<ObjEnum>, // Enum type
+    void* // Pointer type
 > {
     using std::variant<
         std::monostate,
@@ -196,7 +201,7 @@ std::string getTypeName(const Value& v) {
         std::string operator()(const std::vector<std::shared_ptr<ObjFunction>>&) const { return "OverloadedFunctions"; }
         std::string operator()(const std::shared_ptr<ObjModule>&) const { return "ObjModule"; }
         std::string operator()(const std::shared_ptr<ObjEnum>&) const { return "ObjEnum"; }
-        std::string operator()(void* ptr) const { return "pointer"; } // NEW: Pointer type
+        std::string operator()(void* ptr) const { return "pointer"; }
     } visitor;
     return std::visit(visitor, v);
 }
@@ -221,8 +226,8 @@ enum class AccessModifier { PUBLIC, PRIVATE };
 // ============================================================================
 struct ObjFunction {
     std::string name;
-    int arity = 0; // Initialize arity to 0 for Windows MSCV // represents number of required parameters
-    std::vector<Param> params; // full parameter list
+    int arity = 0; // Parameter initialization.
+    std::vector<Param> params; // Full parameter list
     struct CodeChunk {
         std::vector<int> code;
         std::vector<Value> constants;
@@ -249,19 +254,16 @@ struct ObjArray {
 };
 
 struct ObjBoundMethod {
-    Value receiver; // may be an instance or an array
+    Value receiver;
     std::string name;
 };
 
-// Module object definition
 struct ObjModule {
     std::string name;
     std::unordered_map<std::string, Value> publicMembers;
 };
 
 // ============================================================================  
-
-
 // valueToString – visitor for Value conversion (with trailing zero trimming to mirror Xojo)
 // ============================================================================
 // valueToString converts a Value to a string
@@ -302,7 +304,7 @@ std::string valueToString(const Value& val) {
             char buf[20];
             std::snprintf(buf, sizeof(buf), "ptr(%p)", ptr);
             return std::string(buf);
-        } // NEW: Pointer type
+        } // Pointer type
     } visitor;
     return std::visit(visitor, val);
 }
@@ -322,13 +324,13 @@ enum class XTokenType {
     NOT, AND, OR,
     LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, NOT_EQUAL,
     EOF_TOKEN,
-    CARET, // '^'
+    CARET,  // '^'
     MOD,   // "mod" keyword/operator
     MODULE, // Module declaration
-    DECLARE, // Declare keyword
+    DECLARE, // Module declaration
     SELECT,  // Select keyword for Select Case statement
     CASE,   // Case keyword for Select Case statement
-    ENUM    // NEW: Enum keyword
+    ENUM    // Enum keyword
 };
 
 struct Token {
@@ -401,7 +403,7 @@ private:
         case ']': addToken(XTokenType::RIGHT_BRACKET); break;
         case '&': {
             if (peek() == 'c' || peek() == 'C') {
-                advance(); // consume 'c'
+                advance();
                 std::string hex;
                 while (isxdigit(peek())) { hex.push_back(advance()); }
                 tokens.push_back({ XTokenType::COLOR, "&c" + hex, line });
@@ -559,7 +561,6 @@ struct Environment {
 // ============================================================================  
 // Preprocessing: Remove line continuations and comments
 // ============================================================================
-
 std::string preprocessSource(const std::string& source) {
     std::istringstream iss(source);
     std::string line, result;
@@ -574,15 +575,14 @@ std::string preprocessSource(const std::string& source) {
             }
            // If not inside a string literal, check for comment markers.
             if (!inString) {
-                if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
+                if (c == '/' && i + 1 < line.size() && line[i + 1] == '/')
                     break; // strip from here to end of line
-                }
-                if (c == '\'') {
+                if (c == '\'')
                     break; // strip from here to end of line
-                }
             }
             newline.push_back(c);
         }
+        
         // Process line continuations (underscore at end)
         std::string trimmed = rtrim(newline);
         if (!trimmed.empty() && trimmed.back() == '_') {
@@ -804,7 +804,7 @@ struct FunctionStmt : Stmt {
     std::string name;
     std::vector<Param> params;
     std::vector<std::shared_ptr<Stmt>> body;
-    AccessModifier access; // NEW: Access modifier
+    AccessModifier access;
     FunctionStmt(const std::string& name, const std::vector<Param>& params,
         const std::vector<std::shared_ptr<Stmt>>& body, AccessModifier access = AccessModifier::PUBLIC)
         : name(name), params(params), body(body), access(access) { }
@@ -814,8 +814,8 @@ struct VarStmt : Stmt {
     std::string name; 
     std::shared_ptr<Expr> initializer;
     std::string varType;
-    bool isConstant; // NEW: for Const declarations
-    AccessModifier access; // NEW: Access modifier
+    bool isConstant; // for Const declarations
+    AccessModifier access;
     VarStmt(const std::string& name, std::shared_ptr<Expr> initializer, const std::string& varType = "",
         bool isConstant = false, AccessModifier access = AccessModifier::PUBLIC) 
         : name(name), initializer(initializer), varType(toLower(varType)), isConstant(isConstant), access(access) { }
@@ -883,7 +883,7 @@ struct ForStmt : Stmt {
         : varName(varName), start(start), end(end), step(step), body(body) { }
 };
 
-// NEW: Module AST node
+// Module AST node
 struct ModuleStmt : Stmt {
      std::string name;
      std::vector<std::shared_ptr<Stmt>> body;
@@ -891,7 +891,7 @@ struct ModuleStmt : Stmt {
         : name(name), body(body) { }
 };
 
-// NEW: Declare API statement AST node
+// Declare API statement AST node
 struct DeclareStmt : Stmt {
     bool isFunction; // true if Function, false if Sub
     std::string apiName;
@@ -906,7 +906,7 @@ struct DeclareStmt : Stmt {
         : isFunction(isFunc), apiName(name), libraryName(lib), aliasName(alias), selector(sel), params(params), returnType(retType) { } 
 };
 
-// NEW: Enum AST node
+// Enum AST node
 struct EnumStmt : Stmt {
     std::string name;
     std::unordered_map<std::string, int> members;
@@ -936,7 +936,7 @@ public:
 private:
     std::vector<Token> tokens;
     int current = 0;
-    bool inModule; // NEW: Flag to indicate module context
+    bool inModule; // Flag to indicate module context
 
     bool isAtEnd() { return peek().type == XTokenType::EOF_TOKEN; }
     Token peek() { return tokens[current]; }
@@ -952,7 +952,6 @@ private:
         if (check(type)) return advance();
         std::cerr << "Parse error at line " << peek().line << ": " << msg << std::endl;
         exit(1);
-        //return Token();
     }
     std::vector<std::shared_ptr<Stmt>> block(const std::vector<XTokenType>& terminators) {
         std::vector<std::shared_ptr<Stmt>> statements;
@@ -977,7 +976,7 @@ private:
             return false;
         }
     }
-    // NEW: Parse enum declaration
+    // Parse enum declaration
     std::shared_ptr<Stmt> enumDeclaration() {
         advance(); // consume ENUM
         Token name = consume(XTokenType::IDENTIFIER, "Expect enum name.");
@@ -993,7 +992,7 @@ private:
         if (check(XTokenType::ENUM)) { advance(); }
         return std::make_shared<EnumStmt>(name.lexeme, members);
     }
-    // NEW: Parse module declaration
+    // Parse module declaration
     std::shared_ptr<Stmt> moduleDeclaration() {
         Token name = consume(XTokenType::IDENTIFIER, "Expect module name.");
         bool oldInModule = inModule;
@@ -1004,7 +1003,7 @@ private:
         inModule = oldInModule;
         return std::make_shared<ModuleStmt>(name.lexeme, body);
     }
-    // NEW: Parse Declare statement
+    // Parse Declare statement
     std::shared_ptr<Stmt> declareStatement() {
         bool isFunc;
         if (match({ XTokenType::SUB }))
@@ -1271,10 +1270,9 @@ private:
         else if (isArray)
             initializer = std::make_shared<ArrayLiteralExpr>(std::vector<std::shared_ptr<Expr>>{});
         else if (typeStr == "pointer" || typeStr == "ptr")
-            initializer = std::make_shared<LiteralExpr>(static_cast<void*>(nullptr)); // NEW: Initialize pointer to nullptr
+            initializer = std::make_shared<LiteralExpr>(static_cast<void*>(nullptr)); // Initialize pointer to nullptr
         return std::make_shared<VarStmt>(name.lexeme, initializer, typeStr, isConstant, access);
     }
-    // ---- Updated ifStatement to support elseif chains ----
     std::shared_ptr<Stmt> ifStatement() {
         std::shared_ptr<Expr> condition = expression();
         consume(XTokenType::THEN, "Expect 'Then' after if condition.");
@@ -1407,7 +1405,6 @@ private:
         }
         return expr;
     }
-    // Modified multiplication now calls exponentiation and supports '*' '/' and 'mod'
     std::shared_ptr<Expr> multiplication() {
         std::shared_ptr<Expr> expr = exponentiation();
         while (match({ XTokenType::STAR, XTokenType::SLASH, XTokenType::MOD })) {
@@ -1421,7 +1418,6 @@ private:
         }
         return expr;
     }
-    // New exponentiation method for '^' operator (right-associative)
     std::shared_ptr<Expr> exponentiation() {
         std::shared_ptr<Expr> expr = unary();
         if (match({ XTokenType::CARET })) {
@@ -1512,13 +1508,13 @@ private:
         exit(1);
         return nullptr;
     }
-
-    // ***** NEW: selectCaseStatement() to support "Select Case" constructs *****
+    
+    // ***** selectCaseStatement() to support "Select Case" constructs *****
     std::shared_ptr<Stmt> selectCaseStatement() {
         consume(XTokenType::CASE, "Expect 'Case' after 'Select' in Select Case statement.");
         std::shared_ptr<Expr> switchExpr = expression();
         struct CaseClause {
-            bool isDefault = false; // Initialize to false for MSVC; Initialization not required for other platforms
+            bool isDefault = false;
             std::shared_ptr<Expr> expr;
             std::vector<std::shared_ptr<Stmt>> statements;
         };
@@ -1577,7 +1573,10 @@ int addConstantString(ObjFunction::CodeChunk& chunk, const std::string& s) {
     return chunk.constants.size() - 1;
 }
 
-// Only one definition of callArrayMethod is provided (for arrays)
+// ============================================================================  
+// Built-in Array Methods
+// ============================================================================
+
 Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string& method, const std::vector<Value>& args) {
     std::string m = toLower(method);
     if (m == "add") {
@@ -1632,9 +1631,9 @@ Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string& method
 struct PluginEntry {
     const char* name;
     void* funcPtr;
-    int arity = 0; //init
-    const char* paramTypes[10]; // supports up to 10 parameters - truly excessive - limit should never really be hit.
-    const char* returnType;     // return type string
+    int arity = 0;
+    const char* paramTypes[10]; // Supports up to 10 parameters
+    const char* returnType;     // Return type string
 };
 
 typedef PluginEntry* (*GetPluginEntriesFunc)(int*);
@@ -1671,6 +1670,7 @@ struct ClassDefinition {
 };
 typedef ClassDefinition* (*GetClassDefinitionFunc)();
 
+// Updated mapType to support "array"
 ffi_type* mapType(const std::string& type) {
     if (type == "string") return &ffi_type_pointer;
     else if (type == "double") return &ffi_type_double;
@@ -1684,12 +1684,13 @@ ffi_type* mapType(const std::string& type) {
     else if (type == "variant") return &ffi_type_pointer;
     else if (type == "pointer") return &ffi_type_pointer;
     else if (type == "ptr") return &ffi_type_pointer;
+    else if (type == "array") return &ffi_type_pointer;
     else return nullptr;
 }
 
 BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, const char* returnTypeStr) {
     ffi_cif* cif = new ffi_cif;
-    ffi_type** argTypes = new ffi_type * [arity];
+    ffi_type** argTypes = new ffi_type*[arity];
     for (int i = 0; i < arity; i++) {
         std::string t = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
         ffi_type* ft = mapType(t);
@@ -1699,6 +1700,7 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
         }
         argTypes[i] = ft;
     }
+    // IMPORTANT: Plugin functions that return objects must be declared with "pointer" (or "ptr").
     std::string retTypeString = toLower(std::string(returnTypeStr ? returnTypeStr : "variant"));
     ffi_type* retType = mapType(retTypeString);
     if (!retType) {
@@ -1710,6 +1712,11 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
         exit(1);
     }
     return [funcPtr, cif, arity, argTypes, paramTypes, retType, retTypeString](const std::vector<Value>& args) -> Value {
+        debugLog("PluginFunction: Calling plugin function with " + std::to_string(args.size()) + " arguments.");
+        for (size_t i = 0; i < args.size(); i++) {
+            debugLog("Arg[" + std::to_string(i) + "] type: " + getTypeName(args[i]) +
+                     " value: " + valueToString(args[i]));
+        }
         if ((int)args.size() != arity)
             runtimeError("Plugin function expects " + std::to_string(arity) + " arguments.");
         void** argValues = new void*[arity];
@@ -1719,7 +1726,7 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
         const char* stringStorage[10] = {nullptr};
         unsigned int uintStorage[10] = {0};
         Value* variantStorage[10] = {nullptr};
-        void* pointerStorage[10] = {nullptr}; // NEW: Storage for pointer parameters
+        void* pointerStorage[10] = {nullptr};
         for (int i = 0; i < arity; i++) {
             std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
             if (pType == "string") {
@@ -1753,8 +1760,15 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
                 argValues[i] = &uintStorage[i];
             }
             else if (pType == "variant") {
+                // For parameters declared as variant we copy the Value.
                 variantStorage[i] = new Value(args[i]);
                 argValues[i] = &variantStorage[i];
+            }
+            else if (pType == "array") {
+                if (!holds<std::shared_ptr<ObjArray>>(args[i])) runtimeError("Plugin expects an array argument.");
+                auto arr = getVal<std::shared_ptr<ObjArray>>(args[i]);
+                pointerStorage[i] = static_cast<void*>(arr.get());
+                argValues[i] = &pointerStorage[i];
             }
             else if (pType == "pointer" || pType == "ptr") {
                 if (!holds<void*>(args[i])) runtimeError("Plugin expects a pointer argument.");
@@ -1765,6 +1779,8 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
                 runtimeError("Unsupported plugin parameter type: " + pType);
             }
         }
+
+        debugLog("PluginFunction: About to call ffi_call.");
         union {
             int i;
             double d;
@@ -1772,9 +1788,16 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
             const char* s;
             unsigned int ui;
             Value* variant;
-            void* p; // NEW: pointer return storage
+            void* p;// Pointer return storage
         } resultStorage;
+
+        std::ostringstream oss;
+        oss << "Result Storage Function Pointer: " << reinterpret_cast<void*>(&resultStorage);
+        debugLog(oss.str());
+
         ffi_call(cif, FFI_FN(funcPtr), &resultStorage, argValues);
+
+        debugLog("PluginFunction: ffi_call returned; result type: " + retTypeString);
         for (int i = 0; i < arity; i++) {
             std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
             if (pType == "string") {
@@ -1786,35 +1809,51 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
         }
         delete[] argValues;
         if (retTypeString == "string") {
+            debugLog("PluginFunction: Returning value: " + valueToString(Value(std::string(resultStorage.s ? resultStorage.s : ""))));
             return Value(std::string(resultStorage.s ? resultStorage.s : ""));
         }
         else if (retTypeString == "double") {
+            debugLog("PluginFunction: Returning value: " + valueToString(Value(resultStorage.d)));
             return Value(resultStorage.d);
         }
         else if (retTypeString == "integer") {
+            debugLog("PluginFunction: Returning value: " + valueToString(Value(resultStorage.i)));
             return Value(resultStorage.i);
         }
         else if (retTypeString == "boolean") {
+            debugLog("PluginFunction: Returning value: " + valueToString(Value(resultStorage.b)));
             return Value(resultStorage.b);
         }
         else if (retTypeString == "color") {
+            debugLog("PluginFunction: Returning value: " + valueToString(Value(Color{ resultStorage.ui })));
             return Value(Color{ resultStorage.ui });
         }
         else if (retTypeString == "variant") {
+            debugLog("Setting Variant pointer...");
             if (resultStorage.variant) {
                 Value retVal = *(resultStorage.variant);
                 delete resultStorage.variant;
                 return retVal;
             }
             else {
+                debugLog("PluginFunction: Returning nil variant.");
+                return Value(std::monostate{});
+            }
+        }
+        else if (retTypeString == "array") {
+            ObjArray* arrPtr = static_cast<ObjArray*>(resultStorage.p);
+            if (arrPtr) {
+                auto sharedArr = std::shared_ptr<ObjArray>(arrPtr, [](ObjArray*){});
+                return Value(sharedArr);
+            } else {
                 return Value(std::monostate{});
             }
         }
         else if (retTypeString == "pointer" || retTypeString == "ptr") {
+            debugLog("PluginFunction: Returning pointer value: " + valueToString(Value(resultStorage.p)));
             return Value(resultStorage.p);
         }
         else {
-            //runtimeError("Unsupported plugin return type: " + retTypeString);
             runtimeError("Unsupported plugin return type: " + getTypeName(resultStorage));
         }
         return Value(std::monostate{});
@@ -2010,9 +2049,9 @@ public:
     }
 private:
     VM& vm;
-    bool compilingModule; // NEW: flag indicating if compiling a module
-    std::string currentModuleName; // NEW: current module name
-    std::unordered_map<std::string, Value> currentModulePublicMembers;  // NEW: public members of current module
+    bool compilingModule; // Flag indicating if compiling a module
+    std::string currentModuleName; // Current module name
+    std::unordered_map<std::string, Value> currentModulePublicMembers;  // Public members of current module
 
     void emit(ObjFunction::CodeChunk& chunk, int byte) {
         chunk.code.push_back(byte);
@@ -2193,7 +2232,7 @@ private:
                 compileStmt(s, chunk);
         }
     }
-    // NEW: compileDeclare for API declarations using libffi
+    // compileDeclare for API declarations using libffi
     void compileDeclare(std::shared_ptr<DeclareStmt> declStmt, ObjFunction::CodeChunk& chunk) {
         BuiltinFn apiFunc = wrapPluginFunctionForDeclare(
             declStmt->params,
@@ -2310,10 +2349,6 @@ private:
         debugLog("Compiler: Compiled function: " + function->name + " with required arity " + std::to_string(function->arity));
     }
 };
-
-// ============================================================================  
-// Built-in Array Methods
-// ============================================================================
 
 // ============================================================================  
 // Virtual Machine Execution
@@ -2894,7 +2929,10 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                     auto it = instance->klass->pluginProperties.find(key);
                     if (it != instance->klass->pluginProperties.end()) {
                         BuiltinFn getter = it->second.first;
+                        debugLog("OP_GET_PROPERTY: Calling plugin getter for property '" + key + "'");
                         Value result = getter({ Value(instance->pluginInstance) });
+                        debugLog("OP_GET_PROPERTY: Plugin getter returned type: " + getTypeName(result) +
+                                 " value: " + valueToString(result));
                         vm.stack.push_back(result);
                     }
                     else {
@@ -2935,7 +2973,6 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                 }
             }
             else if (holds<std::shared_ptr<ObjArray>>(object)) {
-                // This branch was added to support array methods.
                 auto array = getVal<std::shared_ptr<ObjArray>>(object);
                 auto bound = std::make_shared<ObjBoundMethod>();
                 bound->receiver = object;
@@ -3050,47 +3087,91 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
     return Value(std::monostate{});
 }
 
+const char MARKER[9] = "XOJOCODE"; // 8 characters + null terminator = 9
+
+std::string retrieveData(const std::string& exePath) {
+    std::ifstream exeFile(exePath, std::ios::binary);
+    if (!exeFile) {
+        debugLog("Error: Cannot load bytecode.\n");
+        return "";
+    }
+    
+    // Determine file size
+    exeFile.seekg(0, std::ios::end);
+    std::streampos fileSize = exeFile.tellg();
+    if (fileSize < 12) { // at least marker (8 bytes) + length (4 bytes)
+        debugLog("No bytecode data found.\n");
+        return "";
+    }
+    
+    // Read the last 12 bytes: marker (8) and text length (4)
+    exeFile.seekg(-12, std::ios::end);
+    char markerBuffer[9] = {0};
+    exeFile.read(markerBuffer, 8);
+    uint32_t textLength;
+    exeFile.read(reinterpret_cast<char*>(&textLength), sizeof(textLength));
+    
+    // Verify marker
+    if (std::strncmp(markerBuffer, MARKER, 8) != 0) {
+        debugLog("Bytecode not found.\n");
+        return "";
+    }
+    
+    // Ensure file contains enough data for the embedded text
+    if (fileSize < static_cast<std::streamoff>(12 + textLength)) {
+        debugLog("Invalid bytecode data length.\n");
+        return "";
+    }
+    
+    // Calculate position of text data
+    std::streampos textPos = fileSize - static_cast<std::streamoff>(12) - static_cast<std::streamoff>(textLength);
+    exeFile.seekg(textPos, std::ios::beg);
+    std::vector<char> textData(textLength);
+    exeFile.read(textData.data(), textLength);
+    
+    return std::string(textData.begin(), textData.end());
+}
 // ============================================================================  
 // Main
 // ============================================================================
 int main(int argc, char* argv[]) {
+    #ifdef _WIN32
+        SetDllDirectory("libs");
+    #endif
     startTime = std::chrono::steady_clock::now();
 
-    std::string filename = "test.txt";
-    
+    std::string filename = "default.xs";
+
 	// Iterate through arguments, skipping argv[0] (program name)
     for (int i = 1; i < argc - 1; i++) {
         std::string arg = argv[i];
-
         if (arg == "--s" && (i + 1 < argc)) {
             filename = argv[i + 1];
         }
         else if (arg == "--d" && (i + 1 < argc)) {
             std::string debugArg = argv[i + 1];
-
+            
             // Convert to lowercase for case-insensitive comparison
-           std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
-
+            std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
             if (debugArg == "true") {
                 DEBUG_MODE = true; 
             } else if (debugArg == "false") {
                 DEBUG_MODE = false; 
-           } else {
+            } else {
                 std::cerr << "Error: Argument for --d must be 'true' or 'false'." << std::endl;
                 return 1;
             }
         }
     }
 
-    // Print DEBUG_MODE status for verification
-    debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF")); //Should only ever show ON since OFF should display no debug info.
-
+    debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF"));
 ////////////////////////Drop-in//////////////////////////////////
 
     VM vm;
     vm.globals = std::make_shared<Environment>(nullptr);
     vm.environment = vm.globals;
 
+/////////////////INITIALIZE THE VM ENVIRONMENT///////////////////////
     // Define built-in constants.
     vm.environment->define("pi", Value(3.141592653589793));
 
@@ -3101,11 +3182,11 @@ int main(int argc, char* argv[]) {
         if (args.size() < 1) runtimeError("print expects an argument.");
         std::cout << valueToString(args[0]) << std::endl;
         return args[0];
-        }));
+    }));
     vm.environment->define("str", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() < 1) runtimeError("str expects an argument.");
         return Value(valueToString(args[0]));
-        }));
+    }));
     vm.environment->define("microseconds", std::string("microseconds"));
     vm.environment->define("ticks", std::string("ticks"));
     vm.environment->define("val", BuiltinFn([](const std::vector<Value>& args) -> Value {
@@ -3114,12 +3195,36 @@ int main(int argc, char* argv[]) {
             runtimeError("val expects a string argument.");
         double d = std::stod(getVal<std::string>(args[0]));
         return d;
-        }));
+    }));
+    vm.environment->define("split", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2)
+            runtimeError("split expects exactly two arguments: text and delimiter.");
+        if (!holds<std::string>(args[0]) || !holds<std::string>(args[1]))
+            runtimeError("split expects both arguments to be strings.");
+        std::string text = getVal<std::string>(args[0]);
+        std::string delimiter = getVal<std::string>(args[1]);
+        auto arr = std::make_shared<ObjArray>();
+        if (delimiter.empty()) {
+            for (char c : text) {
+                arr->elements.push_back(std::string(1, c));
+            }
+        } else {
+            size_t start = 0;
+            size_t pos = text.find(delimiter, start);
+            while (pos != std::string::npos) {
+                arr->elements.push_back(text.substr(start, pos - start));
+                start = pos + delimiter.length();
+                pos = text.find(delimiter, start);
+            }
+            arr->elements.push_back(text.substr(start));
+        }
+        return Value(arr);
+    }));
     vm.environment->define("array", BuiltinFn([](const std::vector<Value>& args) -> Value {
         auto arr = std::make_shared<ObjArray>();
         arr->elements = args;
         return Value(arr);
-        }));
+    }));
     vm.environment->define("abs", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Abs expects exactly one argument.");
         if (holds<int>(args[0]))
@@ -3129,12 +3234,12 @@ int main(int argc, char* argv[]) {
         else
             runtimeError("Abs expects a number.");
         return Value(std::monostate{});
-        }));
+    }));
     vm.environment->define("acos", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Acos expects exactly one argument.");
         double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Acos expects a number."), 0.0));
         return std::acos(x);
-        }));
+    }));
     vm.environment->define("asc", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Asc expects exactly one argument.");
         if (!holds<std::string>(args[0]))
@@ -3142,48 +3247,48 @@ int main(int argc, char* argv[]) {
         std::string s = getVal<std::string>(args[0]);
         if (s.empty()) runtimeError("Asc expects a non-empty string.");
         return (int)s[0];
-        }));
+    }));
     vm.environment->define("asin", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Asin expects exactly one argument.");
         double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Asin expects a number."), 0.0));
         return std::asin(x);
-        }));
+    }));
     vm.environment->define("atan", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Atan expects exactly one argument.");
         double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan expects a number."), 0.0));
         return std::atan(x);
-        }));
+    }));
     vm.environment->define("atan2", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Atan2 expects exactly two arguments.");
         double y = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan2 expects numbers."), 0.0));
         double x = holds<int>(args[1]) ? getVal<int>(args[1]) : (holds<double>(args[1]) ? getVal<double>(args[1]) : (runtimeError("Atan2 expects numbers."), 0.0));
         return std::atan2(y, x);
-        }));
+    }));
     vm.environment->define("ceiling", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Ceiling expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Ceiling expects a number."), 0.0));
         return std::ceil(v);
-        }));
+    }));
     vm.environment->define("cos", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Cos expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Cos expects a number."), 0.0));
         return std::cos(v);
-        }));
+    }));
     vm.environment->define("exp", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Exp expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Exp expects a number."), 0.0));
         return std::exp(v);
-        }));
+    }));
     vm.environment->define("floor", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Floor expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Floor expects a number."), 0.0));
         return std::floor(v);
-         }));
+    }));
     vm.environment->define("log", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Log expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Log expects a number."), 0.0));
         return std::log(v);
-        }));
+    }));
     vm.environment->define("max", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Max expects exactly two arguments.");
         if (holds<int>(args[0]) && holds<int>(args[1])) {
@@ -3195,7 +3300,7 @@ int main(int argc, char* argv[]) {
             double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
             return a > b ? a : b;
         }
-        }));
+    }));
     vm.environment->define("min", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Min expects exactly two arguments.");
         if (holds<int>(args[0]) && holds<int>(args[1])) {
@@ -3207,7 +3312,7 @@ int main(int argc, char* argv[]) {
             double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
             return a < b ? a : b;
         }
-        }));
+    }));
     vm.environment->define("oct", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Oct expects exactly one argument.");
         int n = 0;
@@ -3217,45 +3322,45 @@ int main(int argc, char* argv[]) {
         std::stringstream ss;
         ss << std::oct << n;
         return ss.str();
-        }));
+    }));
     vm.environment->define("pow", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) runtimeError("Pow expects exactly two arguments.");
         double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
         return std::pow(a, b);
-        }));
+    }));
     vm.environment->define("round", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Round expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::round(v);
-        }));
+    }));
     vm.environment->define("sign", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Sign expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         if (v < 0) return -1;
         else if (v == 0) return 0;
         else return 1;
-        }));
+    }));
     vm.environment->define("sin", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Sin expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::sin(v);
-        }));
+    }));
     vm.environment->define("sqrt", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Sqrt expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::sqrt(v);
-        }));
+    }));
     vm.environment->define("tan", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) runtimeError("Tan expects exactly one argument.");
         double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
         return std::tan(v);
-        }));
+    }));
     vm.environment->define("rnd", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() != 0) runtimeError("Rnd expects no arguments.");
         std::uniform_real_distribution<double> dist(0.0, 1.0);
         return dist(global_rng);
-        }));
+    }));
     {
         auto randomClass = std::make_shared<ObjClass>();
         randomClass->name = "random";
@@ -3277,13 +3382,15 @@ int main(int argc, char* argv[]) {
             if (minVal > maxVal) runtimeError("Random.InRange: min is greater than max.");
             std::uniform_int_distribution<int> dist(minVal, maxVal);
             return dist(global_rng);
-            });
+        });
         vm.environment->define("random", randomClass);
     }
 
+    //Load Plugin functions, classes, and modules into the VM environment.
     loadPlugins(vm);
+
 	
-	////////////////////////////////////////////////
+////////////////////////////////////////////////
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Error: Unable to open " << filename << std::endl;
@@ -3291,7 +3398,25 @@ int main(int argc, char* argv[]) {
     }
     std::stringstream buffer;
     buffer << file.rdbuf();
-    std::string source = preprocessSource(buffer.str());
+    //std::string source = preprocessSource(buffer.str());
+    
+    std::string exePath = argv[0]; // path to the current executable
+    std::string retrieved = retrieveData(exePath);
+    std::string source;
+
+    if (!retrieved.empty()) {
+        std::cout << "Retrieved Bytecode:\n" << retrieved << "\n";
+        source = preprocessSource(retrieved);
+    } else {
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "Error: Unable to open " << filename << std::endl;
+            return EXIT_FAILURE;
+        }
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        source = preprocessSource(buffer.str());
+}
 
     debugLog("Starting lexing...");
     Lexer lexer(source);
@@ -3304,19 +3429,20 @@ int main(int argc, char* argv[]) {
     debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
 ///////////////////////////////////////
 
+    //Compile the Xojoscript program.
     debugLog("Starting compilation...");
     Compiler compiler(vm);
     compiler.compile(statements);
-    debugLog("Compilation complete. Main chunk instructions count: " + 
-        std::to_string(vm.mainChunk.code.size()));
+    debugLog("Compilation complete. Main chunk instructions count: " + std::to_string(vm.mainChunk.code.size()));
 
     if (vm.environment->values.find("main") != vm.environment->values.end() &&
         (holds<std::shared_ptr<ObjFunction>>(vm.environment->get("main")) ||
-            holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
+         holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
         Value mainVal = vm.environment->get("main");
         if (holds<std::shared_ptr<ObjFunction>>(mainVal)) {
             auto mainFunction = getVal<std::shared_ptr<ObjFunction>>(mainVal);
             debugLog("Calling main function...");
+            //Run the compiled bytecode
             runVM(vm, mainFunction->chunk);
         }
         else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(mainVal)) {

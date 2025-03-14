@@ -8,8 +8,8 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b %ERRORLEVEL%
 )
 
-:: Compile xojoscript.cpp with metadata (32-bit)
-g++ -static -o xojoscript.exe xojoscript.cpp xojoscript.res -lffi -O3 -march=native -mtune=native 2> error.log
+:: Compile xojoscript.cpp with metadata
+g++ -static -m64 -o xojoscript.exe xojoscript.cpp xojoscript.res -Lc:/xojodevkit/x86_64-w64-mingw32/lib/libffix64 -lffi -static-libgcc -static-libstdc++ -O3 -march=native -mtune=native 2> error.log
 
 :: Check if compilation was successful
 if %ERRORLEVEL% NEQ 0 (
@@ -19,17 +19,17 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Ensure the release directory exists
-if not exist release mkdir release
+if not exist release-64 mkdir release-64
 
 :: Move the compiled executable to the release directory
-move /Y xojoscript.exe release\
+move /Y xojoscript.exe release-64\
 
 :: Dump DLL dependencies using objdump
 echo DLL dependencies:
-objdump -p release\xojoscript.exe | findstr /R "DLL"
+objdump -p release-64\xojoscript.exe | findstr /R "DLL"
 
 :: Copy the Scripts folder to the release directory
-xcopy /E /I /Y Scripts release\Scripts
+xcopy /E /I /Y Scripts release-64\Scripts
 
 echo XojoScript Built Successfully.
 exit /b 0

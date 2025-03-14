@@ -6,10 +6,10 @@
 
 if [ "$(uname -s)" = "Darwin" ]; then
   echo "Detected macOS. Building XGUI.dylib..."
-  g++ -shared -fPIC -m64 -o XGUI.dylib XGUI.cpp $(pkg-config --cflags --libs gtk+-3.0)
+  g++ -shared -fPIC -m64 -static -static-libgcc -static-libstdc++ -o XGUI.dylib XGUI.cpp $(pkg-config --cflags --libs gtk+-3.0)
   echo "Build complete: XGUI.dylib"
 else
   echo "Detected Linux. Building XGUI.so..."
-  g++ -shared -fPIC -m64 -o XGUI.so XGUI.cpp $(pkg-config --cflags --libs gtk+-3.0)
+  g++ -shared -fPIC -static -static-libgcc -static-libstdc++ -m64 -o XGUI.so XGUI.cpp $(pkg-config --cflags --libs gtk+-3.0)
   echo "Build complete: XGUI.so"
 fi

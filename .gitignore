@@ -1,6 +1,7 @@
 
 /.vscode
 /release
+/release-64
 Plugins/ColorConsole.dll.exp
 Plugins/ColorConsole.dll.lib
 Plugins/ColorConsole.pdb
@@ -25,12 +26,6 @@ Plugins/GUICPP/XGUI.dll.manifest
 Plugins/GUICPP/XGUI.dll.manifest
 Plugins/GUICPP/XGUI-hold.cpp
 Plugins/GUICPP/XGUI.cpp-new
-xclass2.cxx
-xojoscript.cpp-nope
-xojoscriptorig.cpp
-/release-64
-windows-beta-32-bit.zip
-/windows-beta-32-bit
-/windows-beta-64-bit
-windows-beta-64-bit.zip
-xojoscript-commentmod.cpp
+/Archive
+/Releases
+XojoDevKit-Windows/xojodevkit.zip

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Ensure the release/libs output directory exists
-mkdir -p release/libs
+mkdir -p release-64/libs
 
 # Change to the Plugins directory
 cd Plugins || { echo "Plugins directory not found"; exit 1; }
@@ -14,11 +14,11 @@ for file in *.cpp; do
     filename="${file%.cpp}"
     echo "Compiling $file..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        g++ -shared -fPIC -o "$filename.dylib" "$file"
-        mv -f "$filename.dylib" ../release/libs/
+        g++ -m64 -shared -static -static-libgcc -static-libstdc++ -fPIC -o "$filename.dylib" "$file"
+        mv -f "$filename.dylib" ../release-64/libs/
     else
-        g++ -shared -fPIC -o "$filename.so" "$file"
-        mv -f "$filename.so" ../release/libs/
+        g++ -shared -fPIC -o "$filename.so" "$file" -m64
+        mv -f "$filename.so" ../release-64/libs/
     fi
 done
 
@@ -31,10 +31,10 @@ for file in *.rs; do
     echo "Compiling $file..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         rustc --crate-type=cdylib "$file" -o "$filename.dylib"
-        mv -f "$filename.dylib" ../release/libs/
+        mv -f "$filename.dylib" ../release-64/libs/
     else
         rustc --crate-type=cdylib "$file" -o "$filename.so"
-        mv -f "$filename.so" ../release/libs/
+        mv -f "$filename.so" ../release-64/libs/
     fi
 done
 
@@ -54,8 +54,8 @@ for dir in */ ; do
         fi
         for lib in "$dir"*."$lib_ext"; do
             [ -e "$lib" ] || continue
-            echo "Moving $(basename "$lib") to ../release/libs/"
-            mv -f "$lib" ../release/libs/
+            echo "Moving $(basename "$lib") to ../release-64/libs/"
+            mv -f "$lib" ../release-64/libs/
         done
     fi
 done
@@ -78,12 +78,11 @@ find . -name Cargo.toml | while read -r cargo_file; do
     if [ -d "$plugin_dir/target/release" ]; then
         for lib in "$plugin_dir/target/release/"*."$lib_ext"; do
             [ -e "$lib" ] || continue
-            echo "Moving $(basename "$lib") to ../release/libs/"
-            mv -f "$lib" ../release/libs/
+            echo "Moving $(basename "$lib") to ../release-64/libs/"
+            mv -f "$lib" ../release-64/libs/
         done
     fi
 done
-
 
 cd .. || exit 1
 echo "Build complete."

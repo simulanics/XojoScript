@@ -2,8 +2,8 @@
 setlocal enabledelayedexpansion
 
 :: Ensure the release\libs output directory exists
-if not exist release mkdir release
-if not exist release\libs mkdir release\libs
+if not exist release-64 mkdir release-64
+if not exist release-64\libs mkdir release-64\libs
 
 :: Change to the Plugins directory
 cd Plugins
@@ -12,8 +12,8 @@ cd Plugins
 for %%F in (*.cpp) do (
     set "filename=%%~nF"
     echo Compiling !filename!.cpp...
-    g++ -shared -fPIC -o !filename!.dll %%F
-    move /Y !filename!.dll ..\release\libs\
+    g++ -m64 -shared -fPIC -static -static-libgcc -static-libstdc++ -o !filename!.dll %%F
+    move /Y !filename!.dll ..\release-64\libs\
 )
 
 :: --- Compile single-file Rust plugins in the current directory ---
@@ -21,20 +21,20 @@ for %%F in (*.rs) do (
     set "filename=%%~nF"
     echo Compiling !filename!.rs...
     rustc --crate-type=cdylib "%%F" -o !filename!.dll
-    move /Y !filename!.dll ..\release\libs\
+    move /Y !filename!.dll ..\release-64\libs\
 )
 
 :: --- Build plugins in subdirectories that contain a build.bat file ---
 for /D %%d in (*) do (
-    if exist "%%d\build.bat" (
+    if exist "%%d\build-64.bat" (
         echo Found build.bat in %%d, executing...
         pushd "%%d"
-        call build.bat
+        call build-64.bat
         popd
         :: Move any DLL generated in this subdirectory to the release\libs folder
         for %%f in ("%%d\*.dll") do (
             echo Moving plugin DLL %%~nxf...
-            move /Y "%%f" "..\release\libs\"
+            move /Y "%%f" "..\release-64\libs\"
         )
     )
 )
@@ -51,7 +51,8 @@ for /R %%F in (Cargo.toml) do (
         echo Moving Rust plugin %%~nxG...
 		echo "%%~dpFtarget\release\*.dll"
 		echo "%%~G"
-        xcopy /Y "%~dp0target\release\*.dll" "..\release\libs\"
+		echo "Copy from: %~dp0target\release\*.dll"
+		xcopy /Y "%%~dpFtarget\release\*.dll" "..\release-64\libs\"
     )
 )
 

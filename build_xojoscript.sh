@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Compile xojoscript.cpp using g++
-g++ -static -o xojoscript xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto 2> error.log
+g++ -static -o xojoscript xojoscript.cpp -lffi -static-libgcc -static-libstdc++ -O3 -march=native -mtune=native -flto -m64 2> error.log
 
 # Check if compilation was successful
 if [ $? -ne 0 ]; then
@@ -11,24 +11,24 @@ if [ $? -ne 0 ]; then
 fi
 
 # Ensure the release directory exists
-mkdir -p release
+mkdir -p release-64
 
 # Move the compiled executable to the release directory
-mv -f xojoscript release/
+mv -f xojoscript release-64/
 
 # Dump shared library dependencies based on OS
 if [[ "$(uname)" == "Darwin" ]]; then
     echo "Dylib dependencies:"
-    otool -L release/xojoscript
+    otool -L release-64/xojoscript
 elif [[ "$(uname)" == "Linux" ]]; then
     echo "Shared library dependencies:"
-    ldd release/xojoscript
+    ldd release-64/xojoscript
 else
     echo "Unsupported OS"
 fi
 
 # Copy the Scripts folder to the release directory
-cp -r Scripts release/
+cp -r Scripts release-64/
 
 echo "XojoScript Built Successfully."
 exit 0
