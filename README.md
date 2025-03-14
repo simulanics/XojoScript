@@ -1,5 +1,9 @@
 # /simulanics/XojoScript
 
+This is the very first cross-platform Compiler and VM written by AI and an Agent Team, under direction of Matthew A Combatti. An AI powered plugin creator app is in the works for other developers to rapidly generate plugins for themselves and the community, using natural language. Plugins are currently under development to bring native AI and machine learning to open source XojoScript. Huggingface models, Ollama, and commercial models will also be easily accessible. 🤗
+
+# What is Open Source XojoScript?
+
 An open-source XojoScript compiler and virtual machine for the Xojo language. Compile and Run XojoScript at native C++ machine-code speed, on any system or architecture supporting C++ compilers [GNU/GCC/G++/clang]. This includes 99.9% of devices - even the web [using emscripten]! 🙏
 
 # XojoScript Bytecode Compiler and Virtual Machine 🚀
