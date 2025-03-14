@@ -8,7 +8,7 @@ An open-source XojoScript compiler and virtual machine for the Xojo language. Co
 
 # XojoScript Bytecode Compiler and Virtual Machine 🚀
 
-Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This project is a bytecode compiler and virtual machine written in C++ that handles XojoScript execution—including functions, classes, and more - entirely cross-platform. It compiles XojoScript into bytecode and executes it on a cross-platform custom virtual machine. 🤯
+Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This project is a bytecode compiler and virtual machine written in C++ that handles XojoScript execution—including functions, classes, and more - entirely cross-platform. It compiles XojoScript into bytecode and executes it on a cross-platform custom virtual machine like C#, and is memory safe. 🤯
 
 ## Features ✨
 
