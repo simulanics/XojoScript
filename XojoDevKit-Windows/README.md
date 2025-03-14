@@ -1,5 +1,7 @@
 # XojoDevKit Quick Start Guide
 
+**Download in the Release Section**
+
 The **XojoDevKit** is a portable C++ compiler toolset for Windows, pre-configured to compile C++ programs and libraries for open source XojoScript. This build system is a modified version of [w64devkit](https://github.com/skeeto/w64devkit). Although not required to build libraries for OS XojoScript, it provides a "3 Minute" setup to start compiling XojoScript, its plugins, and to develop your own projects.
 
 Any language capable of exporting C links is cross-compatible with OS XojoScript. This flexibility allows you to create plugins using Go, Rust, C#, C++, C, or any language you prefer. OS XojoScript benefits from an extensive ecosystem of libraries, functions, tools, and accessories, facilitating rapid integration of cross-platform plugins, as well as OS-specific plugins.
