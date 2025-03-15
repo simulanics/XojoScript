@@ -3391,21 +3391,13 @@ int main(int argc, char* argv[]) {
 
 	
 ////////////////////////////////////////////////
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open " << filename << std::endl;
-        return EXIT_FAILURE;
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    //std::string source = preprocessSource(buffer.str());
-    
+
     std::string exePath = argv[0]; // path to the current executable
-    std::string retrieved = retrieveData(exePath);
+    std::string retrieved = retrieveData(exePath); // retrieve bytecode if exists
     std::string source;
 
     if (!retrieved.empty()) {
-        std::cout << "Retrieved Bytecode:\n" << retrieved << "\n";
+        //std::cout << "Retrieved Bytecode:\n" << retrieved << "\n";
         source = preprocessSource(retrieved);
     } else {
         std::ifstream file(filename);
@@ -3416,7 +3408,8 @@ int main(int argc, char* argv[]) {
         std::stringstream buffer;
         buffer << file.rdbuf();
         source = preprocessSource(buffer.str());
-}
+    }
+
 
     debugLog("Starting lexing...");
     Lexer lexer(source);
