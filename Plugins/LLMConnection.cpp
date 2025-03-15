@@ -1,6 +1,7 @@
 // LLMPlugin.cpp
 // Build: g++ -shared -fPIC -o LLMPlugin.so LLMPlugin.cpp -lcurl (Linux/macOS)
 //        g++ -shared -o LLMConnection.dll LLMConnection.cpp -static -lcurl -lcurl.dll (Windows)
+// Plugin uses files from: https://github.com/olrea/openai-cpp
 
 #include "openai/openai.hpp"
 #include <string>
