@@ -1,4 +1,4 @@
-# /simulanics/XojoScript
+# Simulanics Technologies - Open Source XojoScript
 
 This is the very first cross-platform Compiler and VM written by AI and an Agent Team, under direction of Matthew A Combatti. An AI powered plugin creator app is in the works for other developers to rapidly generate plugins for themselves and the community, using natural language. Plugins are currently under development to bring native AI and machine learning to open source XojoScript. Huggingface models, Ollama, and commercial models will also be easily accessible. 🤗
 
