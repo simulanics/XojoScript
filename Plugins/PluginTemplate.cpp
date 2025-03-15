@@ -36,6 +36,7 @@
 #define XPLUGIN_API __declspec(dllexport)
 #else
 #include <unistd.h> // for usleep on Unix
+#include <sched.h>  // for sched_yield on Unix
 #define XPLUGIN_API __attribute__((visibility("default")))
 #endif
 
