@@ -1,5 +1,5 @@
 // ============================================================================  
-// XojoScript Bytecode Compiler and Virtual Machine  
+// XojoScript Bytecode Compiler and Virtual Machine Standalone Compiler 
 // Created by Matthew A Combatti  
 // Simulanics Technologies and Xojo Developers Studio  
 // https://www.simulanics.com  
