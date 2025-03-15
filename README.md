@@ -26,7 +26,9 @@ Welcome to the **XojoScript Bytecode Compiler and Virtual Machine**! This projec
 
 ## Getting Started 🏁
 
-### Prerequisites
+Check the Releases section for latest binaries. If you prefer to compile the repository yourself, continue reading below.
+
+### Prerequisites to Build OS XojoScript and Plugins from Scratch
 
 - A C++ compiler with C++17 support (e.g. g++, clang++)
 - Git
