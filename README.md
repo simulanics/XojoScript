@@ -37,7 +37,7 @@ Check the Releases section for latest binaries. If you prefer to compile the rep
 - libcurl (https://curl.se/download.html) - handles cross-platform socket and web request API's. (for use in web-accessible plugins ie. LLMConnection.dll/so/dylib)
 - (Optional) Rust/Go/C#/etc - to build plugins using other languages than C++
 
-  `Windows XojoDevKit contains all necessary libraries and the build-environment for OS XojoScript and it's Plugins. Windows users using the XojoDevKit, will only need to install git and 64-bit Rust (https://www.rust-lang.org/tools/install).
+  `Windows XojoDevKit contains all necessary libraries and the build-environment for OS XojoScript and it's Plugins. Windows users using the XojoDevKit, will only need to install git and 64-bit Rust (https://www.rust-lang.org/tools/install).`
 
 ### Installation
 
