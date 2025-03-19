@@ -42,5 +42,11 @@ An extensive set of include files, libraries, and advanced features have been in
 9. **Verify Setup**  
    Confirm that your system environment is updated to include the XojoDevKit bin directory.
 
+`Open a command prompt (cmd.exe) and enter:
+     
+     g++ --version
+
+Press return, and GCC/G++ should return its current version number. 🙏`
+
 10. **Start Compiling**  
-    You are now ready to compile XojoScript, its plugins, or any other C++ programs using the open source g++ compiler on Windows.
+    You are now ready to compile XojoScript, its plugins, or any other C++ programs using the open source g++ compiler on Windows. 🚀
