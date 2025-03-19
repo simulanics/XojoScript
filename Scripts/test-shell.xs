@@ -5,18 +5,18 @@ Dim result As String
 Dim exitCode As Integer
 
 // Create a new shell instance
-shellID = Shell_Create
+shellID = Shell_Create()
 
 If shellID > 0 Then
     // Define the command (Windows example: "dir", macOS/Linux: "ls")
     '#If TargetWindows Then
-        command = "dir"
+    '    command = "dir"
     '#Else
         command = "ls"
     '#EndIf
-    
+    Shell_SetTimeout(shellID, 5000)
     // Execute the command with a 5000ms (5 seconds) timeout
-    success = Shell_Execute(shellID, command, 5000)
+    success = Shell_Execute(shellID, command)
 
     If success Then
         // Get the command output
