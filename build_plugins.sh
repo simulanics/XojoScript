@@ -14,7 +14,7 @@ for file in *.cpp; do
     filename="${file%.cpp}"
     echo "Compiling $file..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        g++ -m64 -shared -static -static-libgcc -static-libstdc++ -fPIC -o "$filename.dylib" "$file"
+        g++ -m64 -shared -fPIC -o "$filename.dylib" "$file"
         mv -f "$filename.dylib" ../release-64/libs/
     else
         g++ -shared -fPIC -o "$filename.so" "$file" -m64

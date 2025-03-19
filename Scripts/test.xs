@@ -36,7 +36,7 @@ Next
 print("Hello World!")
 
 Dim strOutput() As String
-strOutput.add("hello ")
+strOutput.add(  "hello "      )
 strOutput.add("World")
 print(strOutput(0) + strOutput(1))
 
@@ -147,15 +147,15 @@ print(str(val("216.14")))
 
 ' Fibonacci Series Demo in XojoScript
 //Implementation not using plugin. Uncomment to override plugin if present.
-Function Fibonacci(n2 As Integer) As Integer 
-	If n2 <= 0 Then 
-		Return 0 
-	ElseIf n2 = 1 Then 
-		Return 1 
-	Else
-		Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
-	End If
-End Function
+'Function Fibonacci(n2 As Integer) As Integer
+'	If n2 <= 0 Then 
+'		Return 0 
+'	ElseIf n2 = 1 Then 
+'		Return 1 
+'	Else
+'		Return Fibonacci(n2 - 1) + Fibonacci(n2 - 2) 
+'	End If
+'End Function
 
 Dim n As Integer = 20  ' Change this value to generate more numbers 
 Print("Fibonacci Series up to " + Str(n) + " terms:")
@@ -163,11 +163,9 @@ Print("Fibonacci Series up to " + Str(n) + " terms:")
 Dim fibSeries() As Integer 
 Dim fib As Integer
 For i As Integer = 0 To n - 1 
- fib = Fibonacci(i)
- fibSeries.Add(fib) 
-//print("fib: " + str(fib))
-Print("Fibonacci(" + Str(i) + ") = " + Str(fib)) 
-
+	fib = Fibonacci(i)
+	fibSeries.Add(fib) 
+	Print("Fibonacci(" + Str(i) + ") = " + Str(fib)) 
 Next
 
 
@@ -404,7 +402,7 @@ print("Run Time: " + str(microseconds / 1000000) + " seconds")
    
    print( HTMLtoMarkdown(md) )
 
-var url as string = "https://www.simulanics.com"
+var url as string = "https://www.example.com"
 Print("Loading HTML from " + URL + " for translation to Markdown")
 var y as string
 y = URLtoMarkdown(url)

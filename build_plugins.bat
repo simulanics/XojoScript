@@ -12,7 +12,7 @@ cd Plugins
 for %%F in (*.cpp) do (
     set "filename=%%~nF"
     echo Compiling !filename!.cpp...
-    g++ -m64 -shared -fPIC -static -static-libgcc -static-libstdc++ -o !filename!.dll %%F
+    g++ -s -m64 -shared -fPIC -static -static-libgcc -static-libstdc++ -o !filename!.dll %%F
     move /Y !filename!.dll ..\release-64\libs\
 )
 

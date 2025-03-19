@@ -1,0 +1,1 @@
+g++ -s -shared -m64 -O3 -o LLMConnection.dll LLMConnection.cpp -static -lcurl -lcurl.dll -static-libgcc -static-libstdc++

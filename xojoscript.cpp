@@ -73,6 +73,10 @@ std::chrono::steady_clock::time_point startTime;
 //TODO: Make RNG thread-safe when multithreaded support is added - currently bound to main App thread as in Xojo's implementation.
 std::mt19937 global_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
+// Forward declaration of VM struct for use in callbacks.
+struct VM;
+VM* globalVM = nullptr;
+
 // ============================================================================  
 // Forward declarations for object types
 // ============================================================================
@@ -132,7 +136,7 @@ struct Value : public std::variant<
     PropertiesType,
     std::vector<std::shared_ptr<ObjFunction>>,
     std::shared_ptr<ObjModule>,
-    std::shared_ptr<ObjEnum>, // Enum type
+    std::shared_ptr<ObjEnum>,
     void* // Pointer type
 > {
     using std::variant<
@@ -319,7 +323,7 @@ enum class XTokenType {
     FUNCTION, SUB, END, RETURN, CLASS, NEW, DIM, AS, XOPTIONAL, PUBLIC, PRIVATE,
     XCONST, PRINT,
     IF, THEN, ELSE, ELSEIF,
-    FOR, TO, STEP, NEXT,
+    FOR, TO, DOWNTO, STEP, NEXT,
     WHILE, WEND,
     NOT, AND, OR,
     LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, NOT_EQUAL,
@@ -469,6 +473,7 @@ private:
         else if (lowerText == "elseif")   type = XTokenType::ELSEIF;
         else if (lowerText == "for")      type = XTokenType::FOR;
         else if (lowerText == "to")       type = XTokenType::TO;
+        else if (lowerText == "downto")   type = XTokenType::DOWNTO;
         else if (lowerText == "step")     type = XTokenType::STEP;
         else if (lowerText == "next")     type = XTokenType::NEXT;
         else if (lowerText == "while")    type = XTokenType::WHILE;
@@ -573,7 +578,7 @@ std::string preprocessSource(const std::string& source) {
             if (c == '"' && (i == 0 || line[i - 1] != '\\')) {
                 inString = !inString;
             }
-           // If not inside a string literal, check for comment markers.
+            // If not inside a string literal, check for comment markers.
             if (!inString) {
                 if (c == '/' && i + 1 < line.size() && line[i + 1] == '/')
                     break; // strip from here to end of line
@@ -582,7 +587,6 @@ std::string preprocessSource(const std::string& source) {
             }
             newline.push_back(c);
         }
-        
         // Process line continuations (underscore at end)
         std::string trimmed = rtrim(newline);
         if (!trimmed.empty() && trimmed.back() == '_') {
@@ -702,6 +706,145 @@ Value pop(VM& vm) {
     vm.stack.pop_back();
     return v;
 }
+
+
+Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk);
+
+
+// ============================================================================  
+// Script callback invoker (used by trampoline)
+// ============================================================================
+void invokeScriptCallback(const Value& funcVal, const char* param) {
+    debugLog("invokeScriptCallback: Called with param: " + std::string(param ? param : "null"));
+    std::vector<Value> args;
+    args.push_back(std::string(param));
+    if (holds<BuiltinFn>(funcVal)) {
+        debugLog("invokeScriptCallback: Detected BuiltinFn.");
+        BuiltinFn fn = getVal<BuiltinFn>(funcVal);
+        fn(args);
+        debugLog("invokeScriptCallback: BuiltinFn executed.");
+    } else if (holds<std::shared_ptr<ObjFunction>>(funcVal)) {
+        debugLog("invokeScriptCallback: Detected ObjFunction.");
+        std::shared_ptr<ObjFunction> fn = getVal<std::shared_ptr<ObjFunction>>(funcVal);
+        auto previousEnv = globalVM->environment;
+        globalVM->environment = std::make_shared<Environment>(globalVM->globals);
+        for (size_t i = 0; i < fn->params.size(); i++) {
+            if (i < args.size())
+                globalVM->environment->define(fn->params[i].name, args[i]);
+            else
+                globalVM->environment->define(fn->params[i].name, fn->params[i].defaultValue);
+        }
+        Value result = runVM(*globalVM, fn->chunk);
+        debugLog("invokeScriptCallback: Function executed with result: " + valueToString(result));
+        globalVM->environment = previousEnv;
+    } else {
+        runtimeError("invokeScriptCallback: Not a callable function.");
+    }
+}
+
+
+// ============================================================================  
+// Script callback trampoline for AddressOf built-in.
+// This function is called by the ffi closure.
+void scriptCallbackTrampoline(ffi_cif* cif, void* ret, void** args, void* user_data) {
+    debugLog("scriptCallbackTrampoline: Entered.");
+    const char* param = *(const char**)args[0];
+    debugLog("scriptCallbackTrampoline: Parameter: " + std::string(param ? param : "null"));
+    // user_data is a pointer to a Value that holds the script function.
+    Value* funcPtr = (Value*)user_data;
+    debugLog("scriptCallbackTrampoline: Invoking script callback.");
+    invokeScriptCallback(*funcPtr, param);
+    debugLog("scriptCallbackTrampoline: Callback invocation complete.");
+    return;
+}
+
+
+// ============================================================================  
+// Built-in function: AddressOf  
+// Converts a script function to a C-callable function pointer via ffi closure.
+BuiltinFn addressOfBuiltin = [](const std::vector<Value>& args) -> Value {
+    debugLog("AddressOf: Received " + std::to_string(args.size()) + " argument(s).");
+    if (args.size() != 1)
+        runtimeError("AddressOf expects exactly one argument.");
+    debugLog("AddressOf: Argument type: " + getTypeName(args[0]));
+    if (!(holds<std::shared_ptr<ObjFunction>>(args[0]) || holds<BuiltinFn>(args[0])))
+        runtimeError("AddressOf expects a function reference, not a function call result. Remove the parentheses.");
+    // Allocate an ffi closure.
+    ffi_closure* closure;
+    void* code;
+    closure = (ffi_closure*)ffi_closure_alloc(sizeof(ffi_closure), &code);
+    debugLog("AddressOf: ffi_closure_alloc returned closure: " +
+             std::to_string(reinterpret_cast<uintptr_t>(closure)) +
+             ", code: " + std::to_string(reinterpret_cast<uintptr_t>(code)));
+    if (closure == nullptr)
+        runtimeError("AddressOf: ffi_closure_alloc failed.");
+
+        // Prepare a CIF for a function: void callback(const char*)
+        debugLog("AddressOf: Preparing a CIF for a function with a single pointer argument.");
+        ffi_type* argTypes[1] = { &ffi_type_pointer };
+        ffi_cif* cif = new ffi_cif;
+        if (ffi_prep_cif(cif, FFI_DEFAULT_ABI, 1, &ffi_type_void, argTypes) != FFI_OK)
+            runtimeError("AddressOf: ffi_prep_cif failed.");
+        debugLog("AddressOf: ffi_prep_cif succeeded.");
+    
+
+    // Store the script function in dynamically allocated memory.
+    Value* funcVal = new Value(args[0]);
+    debugLog("AddressOf: Stored function at " + std::to_string(reinterpret_cast<uintptr_t>(funcVal)));
+
+    // Again, use closure->cif rather than &closure->cif.
+    if (ffi_prep_closure_loc(closure, cif, scriptCallbackTrampoline, funcVal, code) != FFI_OK)
+        runtimeError("AddressOf: ffi_prep_closure_loc failed.");
+    debugLog("AddressOf: ffi_prep_closure_loc succeeded. Returning code pointer: " +
+             std::to_string(reinterpret_cast<uintptr_t>(code)));
+    return Value(code);
+};
+
+
+
+// ============================================================================  
+// Built-in function: AddHandler  
+// Attaches an event callback to a plugin instance event.
+// The first argument should be a string in the format "plugin:<handle>:<eventName>"
+// and the second argument is a pointer obtained from AddressOf.
+BuiltinFn addHandlerBuiltin = [](const std::vector<Value>& args) -> Value {
+    debugLog("AddHandler: Received " + std::to_string(args.size()) + " argument(s).");
+    if (args.size() != 2)
+        runtimeError("AddHandler expects exactly two arguments.");
+    if (!holds<std::string>(args[0]))
+        runtimeError("AddHandler expects first argument to be a string (event target identifier).");
+    std::string target = getVal<std::string>(args[0]);
+    debugLog("AddHandler: Target string: " + target);
+    size_t pos1 = target.find(":");
+    size_t pos2 = target.find(":", pos1 + 1);
+    if (pos1 == std::string::npos || pos2 == std::string::npos)
+        runtimeError("AddHandler: Invalid event target format.");
+    std::string handleStr = target.substr(pos1 + 1, pos2 - pos1 - 1);
+    std::string eventName = target.substr(pos2 + 1);
+    debugLog("AddHandler: Parsed handle: " + handleStr + ", eventName: " + eventName);
+    int handle = std::stoi(handleStr);
+    if (!holds<void*>(args[1]))
+        runtimeError("AddHandler expects second argument to be a pointer.");
+    void* callbackPtr = getVal<void*>(args[1]);
+    debugLog("AddHandler: Callback pointer: " + std::to_string(reinterpret_cast<uintptr_t>(callbackPtr)));
+    // Retrieve the global function 'seteventcallback' which should have been loaded by a plugin.
+    Value setEventVal = globalVM->globals->get("seteventcallback");
+    debugLog("AddHandler: Retrieved seteventcallback from globals.");
+    if (!holds<BuiltinFn>(setEventVal))
+        runtimeError("AddHandler: seteventcallback function not found.");
+    BuiltinFn setEventCallbackFn = getVal<BuiltinFn>(setEventVal);
+    
+    std::vector<Value> callArgs;
+    callArgs.push_back(Value(handle));
+    callArgs.push_back(Value(target));  // Pass the full event key (e.g. "plugin:1:Trigger")
+    callArgs.push_back(Value(callbackPtr));
+
+    debugLog("AddHandler: Calling seteventcallback with handle, eventName, callbackPtr.");
+    Value result = setEventCallbackFn(callArgs);
+    debugLog("AddHandler: seteventcallback returned: " + valueToString(result));
+    return result;
+};
+
 
 // ============================================================================  
 // AST Definitions: Expressions
@@ -903,7 +1046,7 @@ struct DeclareStmt : Stmt {
     DeclareStmt(bool isFunc, const std::string& name, const std::string& lib,
         const std::string& alias, const std::string& sel,
         const std::vector<Param>& params, const std::string& retType)
-        : isFunction(isFunc), apiName(name), libraryName(lib), aliasName(alias), selector(sel), params(params), returnType(retType) { } 
+        : isFunction(isFunc), apiName(name), libraryName(lib), aliasName(alias), selector(sel), params(params), returnType(retType) { }
 };
 
 // Enum AST node
@@ -1302,7 +1445,7 @@ private:
         return result;
     }
     // ---------------------------------------------------------
-    std::shared_ptr<Stmt> forStatement() {
+    /* std::shared_ptr<Stmt> forStatement() {
         Token varName = consume(XTokenType::IDENTIFIER, "Expect loop variable name.");
         if (match({ XTokenType::AS })) { consume(XTokenType::IDENTIFIER, "Expect type after 'As'."); }
         consume(XTokenType::EQUAL, "Expect '=' after loop variable.");
@@ -1324,7 +1467,61 @@ private:
         body.push_back(std::make_shared<ExpressionStmt>(increment));
         std::vector<std::shared_ptr<Stmt>> forBlock = { initializer, std::make_shared<WhileStmt>(condition, body) };
         return std::make_shared<BlockStmt>(forBlock);
+    } */
+
+    std::shared_ptr<Stmt> forStatement() {
+        Token varName = consume(XTokenType::IDENTIFIER, "Expect loop variable name.");
+        if (match({ XTokenType::AS })) { 
+            consume(XTokenType::IDENTIFIER, "Expect type after 'As'.");
+        }
+        consume(XTokenType::EQUAL, "Expect '=' after loop variable.");
+        std::shared_ptr<Expr> startExpr = expression();
+    
+        bool isDown = false;
+        if (match({ XTokenType::TO })) {
+            isDown = false;
+        } else if (match({ XTokenType::DOWNTO })) {
+            isDown = true;
+        } else {
+            runtimeError("Expect 'To' or 'DownTo' after initializer in For loop.");
+        }
+    
+        std::shared_ptr<Expr> endExpr = expression();
+        std::shared_ptr<Expr> stepExpr;
+        if (match({ XTokenType::STEP })) {
+            stepExpr = expression();
+        } else {
+            // Default step: 1 for upward, -1 for downward loops
+            stepExpr = std::make_shared<LiteralExpr>(isDown ? -1 : 1);
+        }
+        std::vector<std::shared_ptr<Stmt>> body = block({ XTokenType::NEXT });
+        consume(XTokenType::NEXT, "Expect 'Next' after For loop body.");
+        if (check(XTokenType::IDENTIFIER)) advance();
+    
+        // Create the initializer for the loop variable
+        std::shared_ptr<Stmt> initializer = std::make_shared<VarStmt>(varName.lexeme, startExpr);
+        std::shared_ptr<Expr> loopVar = std::make_shared<VariableExpr>(varName.lexeme);
+    
+        // Set loop condition: <= for upward, >= for downward
+        std::shared_ptr<Expr> condition;
+        if (isDown) {
+            condition = std::make_shared<BinaryExpr>(loopVar, BinaryOp::GE, endExpr);
+        } else {
+            condition = std::make_shared<BinaryExpr>(loopVar, BinaryOp::LE, endExpr);
+        }
+    
+        // Update the loop variable: always using addition (the step will be negative if downward)
+        std::shared_ptr<Expr> increment = std::make_shared<AssignmentExpr>(
+            varName.lexeme,
+            std::make_shared<BinaryExpr>(loopVar, BinaryOp::ADD, stepExpr)
+        );
+        body.push_back(std::make_shared<ExpressionStmt>(increment));
+    
+        std::vector<std::shared_ptr<Stmt>> forBlock = { initializer, std::make_shared<WhileStmt>(condition, body) };
+        return std::make_shared<BlockStmt>(forBlock);
     }
+    
+
     std::shared_ptr<Stmt> whileStatement() {
         std::shared_ptr<Expr> condition = expression();
         std::vector<std::shared_ptr<Stmt>> body = block({ XTokenType::WEND });
@@ -1508,7 +1705,7 @@ private:
         exit(1);
         return nullptr;
     }
-    
+
     // ***** selectCaseStatement() to support "Select Case" constructs *****
     std::shared_ptr<Stmt> selectCaseStatement() {
         consume(XTokenType::CASE, "Expect 'Case' after 'Select' in Select Case statement.");
@@ -1576,7 +1773,6 @@ int addConstantString(ObjFunction::CodeChunk& chunk, const std::string& s) {
 // ============================================================================  
 // Built-in Array Methods
 // ============================================================================
-
 Value callArrayMethod(std::shared_ptr<ObjArray> array, const std::string& method, const std::vector<Value>& args) {
     std::string m = toLower(method);
     if (m == "add") {
@@ -1636,6 +1832,20 @@ struct PluginEntry {
     const char* returnType;     // Return type string
 };
 
+/* typedef struct PluginEntry {
+    int version;                // 1 for old, 2 for new.
+    const char* name;
+    void* funcPtr;
+    int arity;
+    const char* paramTypes[10];
+    const char* retType;
+    // These fields exist only if version==2.
+    const char* signature;
+    const char* description;
+} PluginEntry; */
+
+
+
 typedef PluginEntry* (*GetPluginEntriesFunc)(int*);
 
 struct ClassProperty {
@@ -1675,7 +1885,7 @@ ffi_type* mapType(const std::string& type) {
     if (type == "string") return &ffi_type_pointer;
     else if (type == "double") return &ffi_type_double;
     else if (type == "number") return &ffi_type_double;
-    else if (type == "void") return &ffi_type_pointer;
+    else if (type == "void") return &ffi_type_uint8;
     else if (type == "integer") return &ffi_type_sint;
     else if (type == "int") return &ffi_type_sint;
     else if (type == "boolean") return &ffi_type_uint8;
@@ -1779,7 +1989,6 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
                 runtimeError("Unsupported plugin parameter type: " + pType);
             }
         }
-
         debugLog("PluginFunction: About to call ffi_call.");
         union {
             int i;
@@ -1788,15 +1997,12 @@ BuiltinFn wrapPluginFunction(void* funcPtr, int arity, const char** paramTypes, 
             const char* s;
             unsigned int ui;
             Value* variant;
-            void* p;// Pointer return storage
+            void* p; // Pointer return storage
         } resultStorage;
-
         std::ostringstream oss;
         oss << "Result Storage Function Pointer: " << reinterpret_cast<void*>(&resultStorage);
         debugLog(oss.str());
-
         ffi_call(cif, FFI_FN(funcPtr), &resultStorage, argValues);
-
         debugLog("PluginFunction: ffi_call returned; result type: " + retTypeString);
         for (int i = 0; i < arity; i++) {
             std::string pType = toLower(std::string(paramTypes[i] ? paramTypes[i] : ""));
@@ -1923,10 +2129,23 @@ void loadPlugins(VM& vm) {
                     PluginEntry* entries = getEntries(&count);
                     for (int i = 0; i < count; i++) {
                         PluginEntry& entry = entries[i];
+
+                        //int ver = entry.version;
+
                         BuiltinFn fn = wrapPluginFunction(entry.funcPtr, entry.arity, entry.paramTypes, entry.returnType);
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
+                        // Plugin API 2.0 - self-documenting plugins - planned.
+                        /* if (ver == 2) {
+                            debugLog("Plugin signature: " + std::string(entry.signature));
+                            debugLog("Plugin description: " + std::string(entry.description));
+                        } */
+                        
                         debugLog("Loaded plugin function: " + std::string(entry.name) + " with arity " + std::to_string(entry.arity) + " from " + dllPath);
+                        /* if (entry.signature != nullptr && entry.description != nullptr) {
+                            debugLog("Plugin signature: " + std::string(entry.signature));
+                            debugLog("Plugin description: " + std::string(entry.description));
+                        } */
                     }
                 }
                 else {
@@ -1993,6 +2212,11 @@ void loadPlugins(VM& vm) {
                         std::string funcName = toLower(std::string(entry.name));
                         vm.environment->define(funcName, fn);
                         debugLog("Loaded plugin function: " + std::string(entry.name) + " with arity " + std::to_string(entry.arity) + " from " + fullPath);
+                        // Plugin API 2.0 - self-documenting plugins - planned.
+                        /* if (entry.signature != nullptr && entry.description != nullptr) {
+                            debugLog("Plugin signature: " + std::string(entry.signature));
+                            debugLog("Plugin description: " + std::string(entry.description));
+                        } */
                     }
                 }
                 else {
@@ -2634,12 +2858,12 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
             Value callee = pop(vm);
             debugLog("VM: Calling function with " + std::to_string(argCount) + " arguments.");
             if (holds<BuiltinFn>(callee)) {
-                auto fn = getVal<BuiltinFn>(callee);
+                BuiltinFn fn = getVal<BuiltinFn>(callee);
                 Value result = fn(args);
                 vm.stack.push_back(result);
             }
             else if (holds<std::shared_ptr<ObjFunction>>(callee)) {
-                auto function = getVal<std::shared_ptr<ObjFunction>>(callee);
+                std::shared_ptr<ObjFunction> function = getVal<std::shared_ptr<ObjFunction>>(callee);
                 int total = function->params.size();
                 int required = function->arity;
                 if ((int)args.size() < required || (int)args.size() > total)
@@ -2690,7 +2914,7 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                     std::string key = toLower(bound->name);
                     Value methodVal = instance->klass->methods[key];
                     if (holds<BuiltinFn>(methodVal)) {
-                        auto fn = getVal<BuiltinFn>(methodVal);
+                        BuiltinFn fn = getVal<BuiltinFn>(methodVal);
                         Value result = fn(args);
                         vm.stack.push_back(result);
                     }
@@ -2936,17 +3160,10 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                         vm.stack.push_back(result);
                     }
                     else {
-                        if (instance->fields.find(key) != instance->fields.end())
-                            vm.stack.push_back(instance->fields[key]);
-                        else if (instance->klass && instance->klass->methods.find(key) != instance->klass->methods.end()) {
-                            auto bound = std::make_shared<ObjBoundMethod>();
-                            bound->receiver = object;
-                            bound->name = key;
-                            vm.stack.push_back(Value(bound));
-                        }
-                        else {
-                            runtimeError("VM: Undefined property: " + propName);
-                        }
+                        // If no explicit getter, return a target identifier string for events.
+                        int handle = *(int*)&(instance->pluginInstance);
+                        std::string target = "plugin:" + std::to_string(handle) + ":" + key;
+                        vm.stack.push_back(Value(target));
                     }
                 }
                 else {
@@ -3092,10 +3309,9 @@ const char MARKER[9] = "XOJOCODE"; // 8 characters + null terminator = 9
 std::string retrieveData(const std::string& exePath) {
     std::ifstream exeFile(exePath, std::ios::binary);
     if (!exeFile) {
-        debugLog("Error: Cannot load bytecode.\n");
+        //debugLog("Error: Cannot load bytecode.\n");
         return "";
     }
-    
     // Determine file size
     exeFile.seekg(0, std::ios::end);
     std::streampos fileSize = exeFile.tellg();
@@ -3103,34 +3319,30 @@ std::string retrieveData(const std::string& exePath) {
         debugLog("No bytecode data found.\n");
         return "";
     }
-    
     // Read the last 12 bytes: marker (8) and text length (4)
     exeFile.seekg(-12, std::ios::end);
     char markerBuffer[9] = {0};
     exeFile.read(markerBuffer, 8);
     uint32_t textLength;
     exeFile.read(reinterpret_cast<char*>(&textLength), sizeof(textLength));
-    
     // Verify marker
     if (std::strncmp(markerBuffer, MARKER, 8) != 0) {
         debugLog("Bytecode not found.\n");
         return "";
     }
-    
     // Ensure file contains enough data for the embedded text
     if (fileSize < static_cast<std::streamoff>(12 + textLength)) {
         debugLog("Invalid bytecode data length.\n");
         return "";
     }
-    
     // Calculate position of text data
     std::streampos textPos = fileSize - static_cast<std::streamoff>(12) - static_cast<std::streamoff>(textLength);
     exeFile.seekg(textPos, std::ios::beg);
     std::vector<char> textData(textLength);
     exeFile.read(textData.data(), textLength);
-    
     return std::string(textData.begin(), textData.end());
 }
+
 // ============================================================================  
 // Main
 // ============================================================================
@@ -3139,10 +3351,8 @@ int main(int argc, char* argv[]) {
         SetDllDirectory("libs");
     #endif
     startTime = std::chrono::steady_clock::now();
-
     std::string filename = "default.xs";
-
-	// Iterate through arguments, skipping argv[0] (program name)
+    // Iterate through arguments, skipping argv[0] (program name)
     for (int i = 1; i < argc - 1; i++) {
         std::string arg = argv[i];
         if (arg == "--s" && (i + 1 < argc)) {
@@ -3163,19 +3373,20 @@ int main(int argc, char* argv[]) {
             }
         }
     }
-
     debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF"));
+
 ////////////////////////Drop-in//////////////////////////////////
 
+    // Register built-in AddressOf and AddHandler functions.
+    // AddressOf converts a script function to a C callback pointer.
+    // AddHandler attaches the callback pointer to a plugin event target.
     VM vm;
     vm.globals = std::make_shared<Environment>(nullptr);
     vm.environment = vm.globals;
+    globalVM = &vm;
 
-/////////////////INITIALIZE THE VM ENVIRONMENT///////////////////////
     // Define built-in constants.
     vm.environment->define("pi", Value(3.141592653589793));
-
-
 
     // Define built-in functions.
     vm.environment->define("print", BuiltinFn([](const std::vector<Value>& args) -> Value {
@@ -3183,6 +3394,16 @@ int main(int argc, char* argv[]) {
         std::cout << valueToString(args[0]) << std::endl;
         return args[0];
     }));
+
+    vm.environment->define("input", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        if (!args.empty())
+            runtimeError("Input() expects no arguments.");
+        std::string userInput;
+        std::getline(std::cin, userInput);
+        return Value(userInput);
+    }));
+    
+
     vm.environment->define("str", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() < 1) runtimeError("str expects an argument.");
         return Value(valueToString(args[0]));
@@ -3361,6 +3582,12 @@ int main(int argc, char* argv[]) {
         std::uniform_real_distribution<double> dist(0.0, 1.0);
         return dist(global_rng);
     }));
+
+    // Register AddressOf built-in.
+    vm.environment->define("AddressOf", BuiltinFn(addressOfBuiltin));
+    // Register AddHandler built-in.
+    vm.environment->define("AddHandler", BuiltinFn(addHandlerBuiltin));
+
     {
         auto randomClass = std::make_shared<ObjClass>();
         randomClass->name = "random";
@@ -3386,10 +3613,10 @@ int main(int argc, char* argv[]) {
         vm.environment->define("random", randomClass);
     }
 
-    //Load Plugin functions, classes, and modules into the VM environment.
+    // Load Plugin functions, classes, and modules into the VM environment.
     loadPlugins(vm);
 
-	
+
 ////////////////////////////////////////////////
 
     std::string exePath = argv[0]; // path to the current executable
@@ -3402,7 +3629,7 @@ int main(int argc, char* argv[]) {
     } else {
         std::ifstream file(filename);
         if (!file.is_open()) {
-            std::cerr << "Error: Unable to open " << filename << std::endl;
+            std::cerr << "Notice: Unable to find " << filename << std::endl;
             return EXIT_FAILURE;
         }
         std::stringstream buffer;
@@ -3422,7 +3649,7 @@ int main(int argc, char* argv[]) {
     debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
 ///////////////////////////////////////
 
-    //Compile the Xojoscript program.
+    // Compile the Xojoscript program.
     debugLog("Starting compilation...");
     Compiler compiler(vm);
     compiler.compile(statements);
@@ -3435,7 +3662,7 @@ int main(int argc, char* argv[]) {
         if (holds<std::shared_ptr<ObjFunction>>(mainVal)) {
             auto mainFunction = getVal<std::shared_ptr<ObjFunction>>(mainVal);
             debugLog("Calling main function...");
-            //Run the compiled bytecode
+            // Run the compiled bytecode
             runVM(vm, mainFunction->chunk);
         }
         else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(mainVal)) {
@@ -3454,12 +3681,9 @@ int main(int argc, char* argv[]) {
         debugLog("No main function found. Executing top-level code...");
         runVM(vm, vm.mainChunk);
     }
-
     debugLog("Program execution finished.");
     return 0;
 }
-
-
 
 //////////////////////////////////////////
 /////////////  Happy Coding!  ////////////

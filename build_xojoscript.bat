@@ -9,7 +9,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Compile xojoscript.cpp with metadata
-g++ -static -m64 -o xojoscript.exe xojoscript.cpp xojoscript.res -Lc:/xojodevkit/x86_64-w64-mingw32/lib/libffix64 -lffi -static-libgcc -static-libstdc++ -O3 -march=native -mtune=native 2> error.log
+g++ -s -static -m64 -o xojoscript.exe xojoscript.cpp xojoscript.res -Lc:/xojodevkit/x86_64-w64-mingw32/lib/libffix64 -lffi -static-libgcc -static-libstdc++ -O3 -march=native -mtune=native 2> error.log
 
 :: Check if compilation was successful
 if %ERRORLEVEL% NEQ 0 (
