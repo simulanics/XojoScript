@@ -1,9 +1,11 @@
-' XojoScript test script for Instance class plugin
+Dim inst As New MyInstance
 
-Var inst As New Instance()
+inst.Value = 42.2
 
-' Set the property "Value" to 42.
-inst.Value = 42
+print(  str( inst.Value ))
 
-' Retrieve the value and print it.
-print("Instance value is " + str(inst.Value))
+//Dim mval as Double = inst.Multiplytwonumbers(2, 42)
+
+//print( str( mval ) )
+
+//Print ( str( inst.MaxValue ))

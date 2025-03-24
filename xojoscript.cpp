@@ -27,7 +27,7 @@
 // SOFTWARE.
 // -----------------------------------------------------------------------------  
 // Build: g++ -o xojoscript.exe xojoscript.cpp -lffi -O3 -march=native -mtune=native -flto
-
+// Library: g++ -shared -DBUILD_SHARED -s -o xojoscript.dll xojoscript.cpp -lffi -O3 -march=native -mtune=native
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -48,6 +48,7 @@
 #include <cstring>
 #include <typeinfo>
 #include <cstdint>
+#include <streambuf>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -526,7 +527,7 @@ struct Environment {
             }
         }
         if (enclosing) return enclosing->get(name);
-        std::cerr << "Undefined variable: " << name << std::endl;
+        std::cerr << "NilObjectException for variable: " << name << std::endl;
         exit(1);
         return Value(std::monostate{});
     }
@@ -550,7 +551,7 @@ struct Environment {
             enclosing->assign(name, value);
             return;
         }
-        std::cerr << "Undefined variable: " << name << std::endl;
+        std::cerr << "NilObjectException for variable: " << name << std::endl;
         exit(1);
     }
 };
@@ -3184,7 +3185,7 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                             vm.stack.push_back(Value(std::monostate{}));
                         }
                         else {
-                            runtimeError("VM: Undefined property: " + propName);
+                            runtimeError("VM: NilObjectException for property: " + propName);
                         }
                     }
                 }
@@ -3227,7 +3228,7 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                 if (module->publicMembers.find(key) != module->publicMembers.end())
                     vm.stack.push_back(module->publicMembers[key]);
                 else
-                    runtimeError("VM: Undefined module property: " + propName);
+                    runtimeError("VM: NilObjectException module property: " + propName);
             }
             else if (holds<std::shared_ptr<ObjEnum>>(object)) {
                 auto en = getVal<std::shared_ptr<ObjEnum>>(object);
@@ -3236,7 +3237,7 @@ Value runVM(VM& vm, const ObjFunction::CodeChunk& chunk) {
                     vm.stack.push_back(en->members[key]);
                 }
                 else {
-                    runtimeError("VM: Undefined enum member: " + propName);
+                    runtimeError("VM: NilObjectException enum member: " + propName);
                 }
             }
             else {
@@ -3346,48 +3347,523 @@ std::string retrieveData(const std::string& exePath) {
 // ============================================================================  
 // Main
 // ============================================================================
-int main(int argc, char* argv[]) {
-    #ifdef _WIN32
-        SetDllDirectory("libs");
-    #endif
-    startTime = std::chrono::steady_clock::now();
-    std::string filename = "default.xs";
-    // Iterate through arguments, skipping argv[0] (program name)
-    for (int i = 1; i < argc - 1; i++) {
-        std::string arg = argv[i];
-        if (arg == "--s" && (i + 1 < argc)) {
-            filename = argv[i + 1];
-        }
-        else if (arg == "--d" && (i + 1 < argc)) {
-            std::string debugArg = argv[i + 1];
-            
-            // Convert to lowercase for case-insensitive comparison
-            std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
-            if (debugArg == "true") {
-                DEBUG_MODE = true; 
-            } else if (debugArg == "false") {
-                DEBUG_MODE = false; 
-            } else {
-                std::cerr << "Error: Argument for --d must be 'true' or 'false'." << std::endl;
-                return 1;
+
+#ifndef BUILD_SHARED
+
+    int main(int argc, char* argv[]) {
+        #ifdef _WIN32
+            SetDllDirectory("libs");
+        #endif
+        startTime = std::chrono::steady_clock::now();
+        std::string filename = "default.xs";
+        // Iterate through arguments, skipping argv[0] (program name)
+        for (int i = 1; i < argc - 1; i++) {
+            std::string arg = argv[i];
+            if (arg == "--s" && (i + 1 < argc)) {
+                filename = argv[i + 1];
+            }
+            else if (arg == "--d" && (i + 1 < argc)) {
+                std::string debugArg = argv[i + 1];
+                
+                // Convert to lowercase for case-insensitive comparison
+                std::transform(debugArg.begin(), debugArg.end(), debugArg.begin(), ::tolower);
+                if (debugArg == "true") {
+                    DEBUG_MODE = true; 
+                } else if (debugArg == "false") {
+                    DEBUG_MODE = false; 
+                } else {
+                    std::cerr << "Error: Argument for --d must be 'true' or 'false'." << std::endl;
+                    return 1;
+                }
             }
         }
+        debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF"));
+
+    ////////////////////////Drop-in//////////////////////////////////
+
+        // Register built-in AddressOf and AddHandler functions.
+        // AddressOf converts a script function to a C callback pointer.
+        // AddHandler attaches the callback pointer to a plugin event target.
+        VM vm;
+        vm.globals = std::make_shared<Environment>(nullptr);
+        vm.environment = vm.globals;
+        globalVM = &vm;
+
+        // Define built-in constants.
+        vm.environment->define("pi", Value(3.141592653589793));
+
+        #ifdef _WIN32
+        std::string nativeEndOfLine = "\r\n";
+    #else
+        std::string nativeEndOfLine = "\n";
+    #endif
+    vm.environment->define("endofline", nativeEndOfLine);
+    vm.environment->define("eol", nativeEndOfLine);
+
+
+        vm.environment->define("sortwith", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            // Check that exactly 2 arguments were passed.
+            if (args.size() != 2)
+                runtimeError("sortwith expects exactly 2 arguments.");
+        
+            // Ensure both arguments are arrays.
+            if (!holds<std::shared_ptr<ObjArray>>(args[0]) || !holds<std::shared_ptr<ObjArray>>(args[1]))
+                runtimeError("sortwith expects both arguments to be arrays.");
+        
+            auto arr1 = getVal<std::shared_ptr<ObjArray>>(args[0]);
+            auto arr2 = getVal<std::shared_ptr<ObjArray>>(args[1]);
+        
+            // They must be of equal length.
+            if (arr1->elements.size() != arr2->elements.size())
+                runtimeError("sortwith: both arrays must have the same number of elements.");
+        
+            size_t n = arr1->elements.size();
+            // Create an index vector [0, 1, 2, ... n-1]
+            std::vector<size_t> indices(n);
+            for (size_t i = 0; i < n; i++) {
+                indices[i] = i;
+            }
+        
+            // Sort the indices based on the values in arr1.
+            std::sort(indices.begin(), indices.end(), [arr1](size_t i, size_t j) {
+                const Value &a = arr1->elements[i];
+                const Value &b = arr1->elements[j];
+                // First, if both are int, compare as integers.
+                if (holds<int>(a) && holds<int>(b))
+                    return getVal<int>(a) < getVal<int>(b);
+                // Otherwise, if both are numbers (int or double), compare numerically.
+                else if ((holds<double>(a) || holds<int>(a)) && (holds<double>(b) || holds<int>(b))) {
+                    double da = holds<double>(a) ? getVal<double>(a) : static_cast<double>(getVal<int>(a));
+                    double db = holds<double>(b) ? getVal<double>(b) : static_cast<double>(getVal<int>(b));
+                    return da < db;
+                }
+                // Fallback: use string comparison.
+                return valueToString(a) < valueToString(b);
+            });
+        
+            // Create new sorted vectors for both arrays.
+            std::vector<Value> newArr1(n), newArr2(n);
+            for (size_t i = 0; i < n; i++) {
+                newArr1[i] = arr1->elements[indices[i]];
+                newArr2[i] = arr2->elements[indices[i]];
+            }
+        
+            // Replace the contents of the original arrays with the sorted ones.
+            arr1->elements = newArr1;
+            arr2->elements = newArr2;
+        
+            // sortwith is a procedure so we return nil.
+            return Value(std::monostate{});
+        }));
+        
+        // Define built-in functions.
+        vm.environment->define("print", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() < 1) runtimeError("print expects an argument.");
+            std::cout << valueToString(args[0]) << std::endl;
+            return args[0];
+        }));
+
+        vm.environment->define("input", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (!args.empty())
+                runtimeError("Input() expects no arguments.");
+            std::string userInput;
+            std::getline(std::cin, userInput);
+            return Value(userInput);
+        }));
+        
+
+        vm.environment->define("str", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() < 1) runtimeError("str expects an argument.");
+            return Value(valueToString(args[0]));
+        }));
+        vm.environment->define("microseconds", std::string("microseconds"));
+        vm.environment->define("ticks", std::string("ticks"));
+        vm.environment->define("val", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("val expects exactly one argument.");
+            if (!holds<std::string>(args[0]))
+                runtimeError("val expects a string argument.");
+            double d = std::stod(getVal<std::string>(args[0]));
+            return d;
+        }));
+        vm.environment->define("split", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 2)
+                runtimeError("split expects exactly two arguments: text and delimiter.");
+            if (!holds<std::string>(args[0]) || !holds<std::string>(args[1]))
+                runtimeError("split expects both arguments to be strings.");
+            std::string text = getVal<std::string>(args[0]);
+            std::string delimiter = getVal<std::string>(args[1]);
+            auto arr = std::make_shared<ObjArray>();
+            if (delimiter.empty()) {
+                for (char c : text) {
+                    arr->elements.push_back(std::string(1, c));
+                }
+            } else {
+                size_t start = 0;
+                size_t pos = text.find(delimiter, start);
+                while (pos != std::string::npos) {
+                    arr->elements.push_back(text.substr(start, pos - start));
+                    start = pos + delimiter.length();
+                    pos = text.find(delimiter, start);
+                }
+                arr->elements.push_back(text.substr(start));
+            }
+            return Value(arr);
+        }));
+        vm.environment->define("array", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            auto arr = std::make_shared<ObjArray>();
+            arr->elements = args;
+            return Value(arr);
+        }));
+        vm.environment->define("abs", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Abs expects exactly one argument.");
+            if (holds<int>(args[0]))
+                return std::abs(getVal<int>(args[0]));
+            else if (holds<double>(args[0]))
+                return std::fabs(getVal<double>(args[0]));
+            else
+                runtimeError("Abs expects a number.");
+            return Value(std::monostate{});
+        }));
+        vm.environment->define("acos", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Acos expects exactly one argument.");
+            double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Acos expects a number."), 0.0));
+            return std::acos(x);
+        }));
+        vm.environment->define("asc", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Asc expects exactly one argument.");
+            if (!holds<std::string>(args[0]))
+                runtimeError("Asc expects a string.");
+            std::string s = getVal<std::string>(args[0]);
+            if (s.empty()) runtimeError("Asc expects a non-empty string.");
+            return (int)s[0];
+        }));
+        vm.environment->define("asin", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Asin expects exactly one argument.");
+            double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Asin expects a number."), 0.0));
+            return std::asin(x);
+        }));
+        vm.environment->define("atan", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Atan expects exactly one argument.");
+            double x = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan expects a number."), 0.0));
+            return std::atan(x);
+        }));
+        vm.environment->define("atan2", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) runtimeError("Atan2 expects exactly two arguments.");
+            double y = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Atan2 expects numbers."), 0.0));
+            double x = holds<int>(args[1]) ? getVal<int>(args[1]) : (holds<double>(args[1]) ? getVal<double>(args[1]) : (runtimeError("Atan2 expects numbers."), 0.0));
+            return std::atan2(y, x);
+        }));
+        vm.environment->define("ceiling", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Ceiling expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Ceiling expects a number."), 0.0));
+            return std::ceil(v);
+        }));
+        vm.environment->define("cos", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Cos expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Cos expects a number."), 0.0));
+            return std::cos(v);
+        }));
+        vm.environment->define("exp", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Exp expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Exp expects a number."), 0.0));
+            return std::exp(v);
+        }));
+        vm.environment->define("floor", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Floor expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Floor expects a number."), 0.0));
+            return std::floor(v);
+        }));
+        vm.environment->define("log", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Log expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : (holds<double>(args[0]) ? getVal<double>(args[0]) : (runtimeError("Log expects a number."), 0.0));
+            return std::log(v);
+        }));
+        vm.environment->define("max", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) runtimeError("Max expects exactly two arguments.");
+            if (holds<int>(args[0]) && holds<int>(args[1])) {
+                int a = getVal<int>(args[0]), b = getVal<int>(args[1]);
+                return a > b ? a : b;
+            }
+            else {
+                double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+                double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
+                return a > b ? a : b;
+            }
+        }));
+        vm.environment->define("min", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) runtimeError("Min expects exactly two arguments.");
+            if (holds<int>(args[0]) && holds<int>(args[1])) {
+                int a = getVal<int>(args[0]), b = getVal<int>(args[1]);
+                return a < b ? a : b;
+            }
+            else {
+                double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+                double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
+                return a < b ? a : b;
+            }
+        }));
+        vm.environment->define("oct", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Oct expects exactly one argument.");
+            int n = 0;
+            if (holds<int>(args[0])) n = getVal<int>(args[0]);
+            else if (holds<double>(args[0])) n = static_cast<int>(getVal<double>(args[0]));
+            else runtimeError("Oct expects a number.");
+            std::stringstream ss;
+            ss << std::oct << n;
+            return ss.str();
+        }));
+        vm.environment->define("pow", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 2) runtimeError("Pow expects exactly two arguments.");
+            double a = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            double b = holds<int>(args[1]) ? getVal<int>(args[1]) : getVal<double>(args[1]);
+            return std::pow(a, b);
+        }));
+        vm.environment->define("round", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Round expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            return std::round(v);
+        }));
+        vm.environment->define("sign", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Sign expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            if (v < 0) return -1;
+            else if (v == 0) return 0;
+            else return 1;
+        }));
+        vm.environment->define("sin", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Sin expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            return std::sin(v);
+        }));
+        vm.environment->define("sqrt", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Sqrt expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            return std::sqrt(v);
+        }));
+        vm.environment->define("tan", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 1) runtimeError("Tan expects exactly one argument.");
+            double v = holds<int>(args[0]) ? getVal<int>(args[0]) : getVal<double>(args[0]);
+            return std::tan(v);
+        }));
+        vm.environment->define("rnd", BuiltinFn([](const std::vector<Value>& args) -> Value {
+            if (args.size() != 0) runtimeError("Rnd expects no arguments.");
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            return dist(global_rng);
+        }));
+
+        // Register AddressOf built-in.
+        vm.environment->define("AddressOf", BuiltinFn(addressOfBuiltin));
+        // Register AddHandler built-in.
+        vm.environment->define("AddHandler", BuiltinFn(addHandlerBuiltin));
+
+        {
+            auto randomClass = std::make_shared<ObjClass>();
+            randomClass->name = "random";
+            randomClass->methods["inrange"] = BuiltinFn([](const std::vector<Value>& args) -> Value {
+                if (args.size() != 2) runtimeError("Random.InRange expects exactly two arguments.");
+                int minVal = 0, maxVal = 0;
+                if (holds<int>(args[0]))
+                    minVal = getVal<int>(args[0]);
+                else if (holds<double>(args[0]))
+                    minVal = static_cast<int>(getVal<double>(args[0]));
+                else
+                    runtimeError("Random.InRange expects a number as first argument.");
+                if (holds<int>(args[1]))
+                    maxVal = getVal<int>(args[1]);
+                else if (holds<double>(args[1]))
+                    maxVal = static_cast<int>(getVal<double>(args[1]));
+                else
+                    runtimeError("Random.InRange expects a number as second argument.");
+                if (minVal > maxVal) runtimeError("Random.InRange: min is greater than max.");
+                std::uniform_int_distribution<int> dist(minVal, maxVal);
+                return dist(global_rng);
+            });
+            vm.environment->define("random", randomClass);
+        }
+
+        // Load Plugin functions, classes, and modules into the VM environment.
+        loadPlugins(vm);
+
+
+    ////////////////////////////////////////////////
+
+        std::string exePath = argv[0]; // path to the current executable
+        std::string retrieved = retrieveData(exePath); // retrieve bytecode if exists
+        std::string source;
+
+        if (!retrieved.empty()) {
+            //std::cout << "Retrieved Bytecode:\n" << retrieved << "\n";
+            source = preprocessSource(retrieved);
+        } else {
+            std::ifstream file(filename);
+            if (!file.is_open()) {
+                std::cerr << "Notice: Unable to find " << filename << std::endl;
+                return EXIT_FAILURE;
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            source = preprocessSource(buffer.str());
+        }
+
+
+        debugLog("Starting lexing...");
+        Lexer lexer(source);
+        auto tokens = lexer.scanTokens();
+        debugLog("Lexing complete. Tokens count: " + std::to_string(tokens.size()));
+
+        debugLog("Starting parsing...");
+        Parser parser(tokens);
+        std::vector<std::shared_ptr<Stmt>> statements = parser.parse();
+        debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
+    ///////////////////////////////////////
+
+        // Compile the Xojoscript program.
+        debugLog("Starting compilation...");
+        Compiler compiler(vm);
+        compiler.compile(statements);
+        debugLog("Compilation complete. Main chunk instructions count: " + std::to_string(vm.mainChunk.code.size()));
+
+        if (vm.environment->values.find("main") != vm.environment->values.end() &&
+            (holds<std::shared_ptr<ObjFunction>>(vm.environment->get("main")) ||
+            holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
+            Value mainVal = vm.environment->get("main");
+            if (holds<std::shared_ptr<ObjFunction>>(mainVal)) {
+                auto mainFunction = getVal<std::shared_ptr<ObjFunction>>(mainVal);
+                debugLog("Calling main function...");
+                // Run the compiled bytecode
+                runVM(vm, mainFunction->chunk);
+            }
+            else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(mainVal)) {
+                auto overloads = getVal<std::vector<std::shared_ptr<ObjFunction>>>(mainVal);
+                std::shared_ptr<ObjFunction> mainFunction = nullptr;
+                for (auto f : overloads) {
+                    if (f->arity == 0) { mainFunction = f; break; }
+                }
+                if (!mainFunction)
+                    runtimeError("No main function with 0 parameters found.");
+                debugLog("Calling main function...");
+                runVM(vm, mainFunction->chunk);
+            }
+        }
+        else {
+            debugLog("No main function found. Executing top-level code...");
+            runVM(vm, vm.mainChunk);
+        }
+        debugLog("Program execution finished.");
+        return 0;
     }
-    debugLog(std::string("DEBUG_MODE: ") + (DEBUG_MODE ? "ON" : "OFF"));
 
-////////////////////////Drop-in//////////////////////////////////
 
-    // Register built-in AddressOf and AddHandler functions.
-    // AddressOf converts a script function to a C callback pointer.
-    // AddHandler attaches the callback pointer to a plugin event target.
+    #ifdef _WIN32
+    // Optional: DllMain for Windows initialization
+    BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
+        switch (ul_reason_for_call) {
+            case DLL_PROCESS_ATTACH:
+            case DLL_THREAD_ATTACH:
+            case DLL_THREAD_DETACH:
+            case DLL_PROCESS_DETACH:
+                break;
+        }
+        return TRUE;
+    }
+    #endif
+
+
+#endif
+
+
+// ============================================================================
+// For building the VM as a library
+// ============================================================================
+
+// Ensure this function is exported with C linkage.
+extern "C" {
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
+// This function takes a C-string (code) and returns a dynamically allocated C-string
+// containing the output. (Caller is responsible for freeing the returned string.)
+const char* CompileAndRun(const char* code, bool enableDebug) {
+    // Set debug mode based on the parameter.
+    DEBUG_MODE = enableDebug;
+    // Redirect std::cout to capture output.
+    std::streambuf* origBuf = std::cout.rdbuf();
+    std::ostringstream captureStream;
+    std::cout.rdbuf(captureStream.rdbuf());
+
+    // --- Setup the VM and environment ---
     VM vm;
     vm.globals = std::make_shared<Environment>(nullptr);
     vm.environment = vm.globals;
     globalVM = &vm;
 
-    // Define built-in constants.
-    vm.environment->define("pi", Value(3.141592653589793));
+    // Register built-in constants and functions.
+#ifdef _WIN32
+    std::string nativeEOL = "\r\n";
+    std::string nativeEndOfLine = "\r\n";
+#else
+    std::string nativeEOL = "\n";
+    std::string nativeEndOfLine = "\n";
+#endif
+    vm.environment->define("EndOfLine", nativeEOL);
+    vm.environment->define("eol", nativeEndOfLine);
 
+
+    vm.environment->define("sortwith", BuiltinFn([](const std::vector<Value>& args) -> Value {
+        // Check that exactly 2 arguments were passed.
+        if (args.size() != 2)
+            runtimeError("sortwith expects exactly 2 arguments.");
+    
+        // Ensure both arguments are arrays.
+        if (!holds<std::shared_ptr<ObjArray>>(args[0]) || !holds<std::shared_ptr<ObjArray>>(args[1]))
+            runtimeError("sortwith expects both arguments to be arrays.");
+    
+        auto arr1 = getVal<std::shared_ptr<ObjArray>>(args[0]);
+        auto arr2 = getVal<std::shared_ptr<ObjArray>>(args[1]);
+    
+        // They must be of equal length.
+        if (arr1->elements.size() != arr2->elements.size())
+            runtimeError("sortwith: both arrays must have the same number of elements.");
+    
+        size_t n = arr1->elements.size();
+        // Create an index vector [0, 1, 2, ... n-1]
+        std::vector<size_t> indices(n);
+        for (size_t i = 0; i < n; i++) {
+            indices[i] = i;
+        }
+    
+        // Sort the indices based on the values in arr1.
+        std::sort(indices.begin(), indices.end(), [arr1](size_t i, size_t j) {
+            const Value &a = arr1->elements[i];
+            const Value &b = arr1->elements[j];
+            // First, if both are int, compare as integers.
+            if (holds<int>(a) && holds<int>(b))
+                return getVal<int>(a) < getVal<int>(b);
+            // Otherwise, if both are numbers (int or double), compare numerically.
+            else if ((holds<double>(a) || holds<int>(a)) && (holds<double>(b) || holds<int>(b))) {
+                double da = holds<double>(a) ? getVal<double>(a) : static_cast<double>(getVal<int>(a));
+                double db = holds<double>(b) ? getVal<double>(b) : static_cast<double>(getVal<int>(b));
+                return da < db;
+            }
+            // Fallback: use string comparison.
+            return valueToString(a) < valueToString(b);
+        });
+    
+        // Create new sorted vectors for both arrays.
+        std::vector<Value> newArr1(n), newArr2(n);
+        for (size_t i = 0; i < n; i++) {
+            newArr1[i] = arr1->elements[indices[i]];
+            newArr2[i] = arr2->elements[indices[i]];
+        }
+    
+        // Replace the contents of the original arrays with the sorted ones.
+        arr1->elements = newArr1;
+        arr2->elements = newArr2;
+    
+        // sortwith is a procedure so we return nil.
+        return Value(std::monostate{});
+    }));
+    
     // Define built-in functions.
     vm.environment->define("print", BuiltinFn([](const std::vector<Value>& args) -> Value {
         if (args.size() < 1) runtimeError("print expects an argument.");
@@ -3619,53 +4095,25 @@ int main(int argc, char* argv[]) {
 
 ////////////////////////////////////////////////
 
-    std::string exePath = argv[0]; // path to the current executable
-    std::string retrieved = retrieveData(exePath); // retrieve bytecode if exists
-    std::string source;
-
-    if (!retrieved.empty()) {
-        //std::cout << "Retrieved Bytecode:\n" << retrieved << "\n";
-        source = preprocessSource(retrieved);
-    } else {
-        std::ifstream file(filename);
-        if (!file.is_open()) {
-            std::cerr << "Notice: Unable to find " << filename << std::endl;
-            return EXIT_FAILURE;
-        }
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        source = preprocessSource(buffer.str());
-    }
-
-
-    debugLog("Starting lexing...");
+    // --- Compile the provided code ---
+    std::string source = preprocessSource(code);
     Lexer lexer(source);
     auto tokens = lexer.scanTokens();
-    debugLog("Lexing complete. Tokens count: " + std::to_string(tokens.size()));
-
-    debugLog("Starting parsing...");
     Parser parser(tokens);
     std::vector<std::shared_ptr<Stmt>> statements = parser.parse();
-    debugLog("Parsing complete. Statements count: " + std::to_string(statements.size()));
-///////////////////////////////////////
-
-    // Compile the Xojoscript program.
-    debugLog("Starting compilation...");
     Compiler compiler(vm);
     compiler.compile(statements);
-    debugLog("Compilation complete. Main chunk instructions count: " + std::to_string(vm.mainChunk.code.size()));
 
+    // --- Run the compiled code ---
+    // If a 'main' function exists, run it; otherwise run top-level code.
     if (vm.environment->values.find("main") != vm.environment->values.end() &&
-        (holds<std::shared_ptr<ObjFunction>>(vm.environment->get("main")) ||
-         holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
+       (holds<std::shared_ptr<ObjFunction>>(vm.environment->get("main")) ||
+        holds<std::vector<std::shared_ptr<ObjFunction>>>(vm.environment->get("main")))) {
         Value mainVal = vm.environment->get("main");
         if (holds<std::shared_ptr<ObjFunction>>(mainVal)) {
             auto mainFunction = getVal<std::shared_ptr<ObjFunction>>(mainVal);
-            debugLog("Calling main function...");
-            // Run the compiled bytecode
             runVM(vm, mainFunction->chunk);
-        }
-        else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(mainVal)) {
+        } else if (holds<std::vector<std::shared_ptr<ObjFunction>>>(mainVal)) {
             auto overloads = getVal<std::vector<std::shared_ptr<ObjFunction>>>(mainVal);
             std::shared_ptr<ObjFunction> mainFunction = nullptr;
             for (auto f : overloads) {
@@ -3673,17 +4121,25 @@ int main(int argc, char* argv[]) {
             }
             if (!mainFunction)
                 runtimeError("No main function with 0 parameters found.");
-            debugLog("Calling main function...");
             runVM(vm, mainFunction->chunk);
         }
-    }
-    else {
-        debugLog("No main function found. Executing top-level code...");
+    } else {
         runVM(vm, vm.mainChunk);
     }
-    debugLog("Program execution finished.");
-    return 0;
+
+    // --- Restore std::cout ---
+    std::cout.rdbuf(origBuf);
+
+    // Get the captured output.
+    std::string result = captureStream.str();
+    // Allocate a new buffer to return; caller must free this buffer.
+    char* retBuffer = new char[result.size() + 1];
+    std::strcpy(retBuffer, result.c_str());
+    return retBuffer;
 }
+}
+
+
 
 //////////////////////////////////////////
 /////////////  Happy Coding!  ////////////

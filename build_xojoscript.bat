@@ -11,6 +11,8 @@ if %ERRORLEVEL% NEQ 0 (
 :: Compile xojoscript.cpp with metadata
 g++ -s -static -m64 -o xojoscript.exe xojoscript.cpp xojoscript.res -Lc:/xojodevkit/x86_64-w64-mingw32/lib/libffix64 -lffi -static-libgcc -static-libstdc++ -O3 -march=native -mtune=native 2> error.log
 
+g++ -s -shared -DBUILD_SHARED -static -m64 -o xojoscript.dll xojoscript.cpp xojoscript.res -Lc:/xojodevkit/x86_64-w64-mingw32/lib/libffix64 -lffi -static-libgcc -static-libstdc++ -O3 -march=native -mtune=native 2> errorlib.log
+
 :: Check if compilation was successful
 if %ERRORLEVEL% NEQ 0 (
     echo Compilation failed! Check error.log for details.
@@ -23,6 +25,9 @@ if not exist release-64 mkdir release-64
 
 :: Move the compiled executable to the release directory
 move /Y xojoscript.exe release-64\
+
+:: Move the compiled library to the release directory
+move /Y xojoscript.dll release-64\
 
 :: Dump DLL dependencies using objdump
 echo DLL dependencies:

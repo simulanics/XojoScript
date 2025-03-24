@@ -113,8 +113,12 @@ while true
 	ProgressBar_SetValue("MyProgress", progress)
     print("Progress value: " + str(ProgressBar_GetValue("MyProgress")))
 	if progress = 100 then
-	   progress = -1
+	   progress = 1
 	end if
     DoEvents()
+    if ProgressBar_GetValue("MyProgress") = 0 then
+        return 0
+    end if
+    
 	Sleep(50)
 wend
