@@ -31,7 +31,7 @@ jobs:
           brew update
           brew install gcc libffi curl boost
 
-      # === Windows ===
+      # === Windows: MSYS2 + MinGW-w64 ===
       - name: Set up MSYS2 & MinGW‑w64 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -46,8 +46,8 @@ jobs:
       - name: Configure PATH for MinGW‑w64 (Windows)
         if: runner.os == 'Windows'
         run: |
-          echo "##[set-env name=MSYS2]${{ env.MSYS2 }}"
-          echo "##[add-path]${{ env.MSYS2 }}\mingw64\bin"
+          echo "MSYS2=${{ env.MSYS2 }}" >> $GITHUB_ENV
+          echo "${{ env.MSYS2 }}\\mingw64\\bin" >> $GITHUB_PATH
 
       - name: Verify g++ (Windows)
         if: runner.os == 'Windows'
@@ -60,7 +60,7 @@ jobs:
           source $HOME/.cargo/env
           rustup default stable
 
-      # === Make build scripts executable ===
+      # === Make scripts executable ===
       - name: Make scripts executable (macOS/Linux)
         if: runner.os != 'Windows'
         run: chmod +x build_xojoscript.sh build_plugins.sh
@@ -77,14 +77,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash --login -i
         run: |
-          # Use MinGW‑w64 g++ for both scripts
           export PATH="${MSYS2}/mingw64/bin:$PATH"
           ./build_xojoscript.bat --arch 64bit --project XojoScript.xojo_project --out build/XojoScript-windows-64bit
           ./build_plugins.bat   --arch 64bit --out build/plugins-windows
 
       # === Upload artifacts ===
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ matrix.os }} 64‑bit builds
           path: build/**
